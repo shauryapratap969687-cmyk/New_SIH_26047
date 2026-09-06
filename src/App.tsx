@@ -10,6 +10,7 @@ import { AddPatientPage } from './pages/AddPatientPage';
 import { CaseTakingPage } from './pages/CaseTakingPage';
 import { SavedCasesPage } from './pages/SavedCasesPage';
 import { CaseDetailPage } from './pages/CaseDetailPage';
+import { PatientCheckinPage } from './pages/PatientCheckinPage';
 
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
@@ -31,7 +32,10 @@ export const App: React.FC = () => {
           {/* Public Login Route */}
           <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected Routes */}
+          {/* Public Patient Self-Check-in Kiosk Route */}
+          <Route path="/patient-checkin" element={<PatientCheckinPage />} />
+
+          {/* Protected Routes for Doctors */}
           <Route
             path="/dashboard"
             element={

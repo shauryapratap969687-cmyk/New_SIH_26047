@@ -29,6 +29,23 @@ export interface Patient {
   createdAt: string;
 }
 
+export interface PreConsultationIntake {
+  id: string;
+  tokenNumber: string;
+  patientName: string;
+  age: string;
+  gender: 'Male' | 'Female' | 'Other';
+  phone: string;
+  city?: string;
+  preferredAyushSystem: AyushSystem;
+  chiefComplaints: string;
+  duration: string;
+  allergies?: string;
+  previousTreatment?: string;
+  submittedAt: string;
+  status: 'Waiting' | 'In Consultation' | 'Completed';
+}
+
 export interface PresentingComplaints {
   chiefComplaints: string;
   duration: string;

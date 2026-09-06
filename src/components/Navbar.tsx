@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Stethoscope,
   ChevronDown,
+  HeartPulse,
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 
@@ -38,7 +39,12 @@ export const Navbar: React.FC = () => {
 
   const isActive = (path: string) => {
     if (path === '/dashboard' && location.pathname === '/') return true;
-    return location.pathname === path || (path === '/cases' && location.pathname.startsWith('/cases/') && location.pathname !== '/cases/new');
+    return (
+      location.pathname === path ||
+      (path === '/cases' &&
+        location.pathname.startsWith('/cases/') &&
+        location.pathname !== '/cases/new')
+    );
   };
 
   return (
@@ -122,6 +128,17 @@ export const Navbar: React.FC = () => {
                 </Link>
               );
             })}
+
+            {/* Patient Kiosk Link */}
+            <Link
+              to="/patient-checkin"
+              target="_blank"
+              title="Open OPD Patient Self-Check-in Kiosk"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors ml-1"
+            >
+              <HeartPulse className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+              <span>Patient Kiosk</span>
+            </Link>
           </nav>
 
           {/* Right Action / Profile */}
@@ -221,6 +238,15 @@ export const Navbar: React.FC = () => {
               </Link>
             );
           })}
+          <Link
+            to="/patient-checkin"
+            target="_blank"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-emerald-800 bg-emerald-50"
+          >
+            <HeartPulse className="w-4 h-4 text-emerald-600" />
+            <span>Open Patient Kiosk</span>
+          </Link>
           <button
             type="button"
             onClick={handleLogout}

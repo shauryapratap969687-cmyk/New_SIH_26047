@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Stethoscope,
   Lock,
@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   KeyRound,
   Check,
+  UserCheck,
+  HeartPulse,
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 
@@ -51,25 +53,25 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-teal-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-teal-950 flex flex-col justify-center py-10 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Background Decorative Rings */}
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Top Tag */}
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-6">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-5">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-teal-400 text-xs font-semibold backdrop-blur-md mb-3 shadow-lg">
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
           <span>SIH26047 Prototype • Ministry of Ayush</span>
         </div>
-        <div className="flex justify-center mb-3">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-teal-500 to-blue-600 p-0.5 shadow-xl shadow-teal-950/50">
+        <div className="flex justify-center mb-2">
+          <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-teal-500 to-blue-600 p-0.5 shadow-xl shadow-teal-950/50">
             <div className="w-full h-full bg-slate-900 rounded-2xl flex items-center justify-center">
-              <Stethoscope className="w-7 h-7 text-teal-400" />
+              <Stethoscope className="w-6 h-6 text-teal-400" />
             </div>
           </div>
         </div>
-        <h2 className="text-3xl font-extrabold text-white tracking-tight">
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
           AYUSH <span className="text-teal-400">CaseFlow</span>
         </h2>
         <p className="mt-1 text-xs text-slate-400 font-medium">
@@ -78,15 +80,57 @@ export const LoginPage: React.FC = () => {
       </div>
 
       {/* Main Card */}
-      <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
-        <div className="bg-white/95 backdrop-blur-md py-8 px-6 sm:px-10 shadow-2xl rounded-2xl border border-slate-200/80 sm:rounded-2xl">
-          <div className="mb-6 border-b border-slate-100 pb-4">
-            <h3 className="text-lg font-bold text-slate-900">Doctor Portal Login</h3>
-            <p className="text-xs text-slate-500">Sign in to access patient records & case-taking</p>
+      <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0 space-y-4">
+        {/* ========================================================= */}
+        {/* PATIENT SELF-CHECK-IN CALLOUT BUTTON (PRE-CONSULTATION KIOSK) */}
+        {/* ========================================================= */}
+        <Link
+          to="/patient-checkin"
+          className="group block p-4 bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 hover:from-teal-500 hover:to-emerald-500 text-white rounded-2xl shadow-xl border border-teal-300/30 transition-all hover:scale-[1.02] active:scale-[0.99]"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0">
+                <HeartPulse className="w-5 h-5 text-amber-300 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
+                    Patient Self-Check-in Kiosk
+                  </span>
+                  <span className="text-[9px] font-bold bg-amber-400 text-slate-900 px-1.5 py-0.2 rounded-full">
+                    New
+                  </span>
+                </div>
+                <h4 className="text-sm font-bold text-white leading-tight mt-0.5">
+                  Pre-Submit Symptoms Before Doctor
+                </h4>
+                <p className="text-[11px] text-teal-100">
+                  मरीज़ स्वयं अपनी समस्या दर्ज करें व OPD टोकन प्राप्त करें
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-white group-hover:translate-x-1 transition-transform shrink-0" />
+          </div>
+        </Link>
+
+        {/* Doctor Login Card */}
+        <div className="bg-white/95 backdrop-blur-md py-6 px-6 sm:px-8 shadow-2xl rounded-2xl border border-slate-200/80">
+          <div className="mb-5 border-b border-slate-100 pb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
+                <UserCheck className="w-4 h-4 text-teal-700" />
+                <span>Doctor Portal Sign In</span>
+              </h3>
+              <p className="text-xs text-slate-500">For Attending AYUSH Medical Officers</p>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+              MO Login
+            </span>
           </div>
 
           {error && (
-            <div className="mb-5 p-3 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2.5 text-xs text-red-800 animate-in fade-in">
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2.5 text-xs text-red-800 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div>
                 <span className="font-semibold">Authentication Failed: </span>
@@ -95,7 +139,7 @@ export const LoginPage: React.FC = () => {
             </div>
           )}
 
-          <form className="space-y-4" onSubmit={handleSubmit}>
+          <form className="space-y-3.5" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="email" className="block text-xs font-semibold text-slate-700 mb-1">
                 Official Doctor Email ID
@@ -112,7 +156,7 @@ export const LoginPage: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="doctor@ayush.demo"
-                  className="block w-full pl-9 pr-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:border-teal-600 bg-slate-50/50 transition-all"
+                  className="block w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:border-teal-600 bg-slate-50/50 transition-all"
                 />
               </div>
             </div>
@@ -133,7 +177,7 @@ export const LoginPage: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="block w-full pl-9 pr-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:border-teal-600 bg-slate-50/50 transition-all"
+                  className="block w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:border-teal-600 bg-slate-50/50 transition-all"
                 />
               </div>
             </div>
@@ -155,8 +199,8 @@ export const LoginPage: React.FC = () => {
           </form>
 
           {/* Demo Credentials Helper Box */}
-          <div className="mt-6 pt-5 border-t border-slate-200">
-            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
+          <div className="mt-5 pt-4 border-t border-slate-200">
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
                   <KeyRound className="w-3.5 h-3.5 text-teal-700" />
@@ -193,7 +237,7 @@ export const LoginPage: React.FC = () => {
         </div>
 
         {/* Prototype Disclaimer */}
-        <div className="text-center mt-4">
+        <div className="text-center">
           <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-900/60 px-3 py-1 rounded-full border border-slate-800">
             <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
             <span>Prototype only. Not for real clinical diagnosis.</span>

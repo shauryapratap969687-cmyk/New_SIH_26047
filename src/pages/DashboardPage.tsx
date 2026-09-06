@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Users,
-  FileText,
   Calendar,
   FileEdit,
   PlusCircle,
@@ -14,20 +13,28 @@ import {
   ChevronRight,
   Printer,
   Search,
+  HeartPulse,
+  Stethoscope,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { storageService } from '../services/storage';
-import type { CaseRecord, Patient, AyushSystem } from '../types';
+import type { CaseRecord, Patient, AyushSystem, PreConsultationIntake } from '../types';
 
 export const DashboardPage: React.FC = () => {
   const { doctor } = useAuth();
+  const navigate = useNavigate();
   const [patients] = useState<Patient[]>(() => storageService.getPatients());
   const [cases] = useState<CaseRecord[]>(() => storageService.getCases());
+  const [preIntakes, setPreIntakes] = useState<PreConsultationIntake[]>(() =>
+    storageService.getPreIntakes()
+  );
   const [searchQuery, setSearchQuery] = useState('');
 
   const todayStr = new Date().toISOString().split('T')[0];
   const casesTodayCount = cases.filter((c) => c.caseDate === todayStr).length;
   const draftCasesCount = cases.filter((c) => c.status === 'Draft').length;
+  const waitingPatientsCount = preIntakes.filter((p) => p.status === 'Waiting').length;
 
   const systemCounts: Record<AyushSystem, number> = {
     Ayurveda: cases.filter((c) => c.ayushSystem === 'Ayurveda').length,
@@ -64,6 +71,16 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  const handleStartConsultation = (intake: PreConsultationIntake) => {
+    storageService.updatePreIntakeStatus(intake.id, 'In Consultation');
+    navigate(`/cases/new?preIntakeId=${intake.id}`);
+  };
+
+  const handleDeletePreIntake = (id: string) => {
+    storageService.deletePreIntake(id);
+    setPreIntakes(storageService.getPreIntakes());
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Welcome Banner */}
@@ -93,6 +110,14 @@ export const DashboardPage: React.FC = () => {
               <span>Start Case Taking</span>
             </Link>
             <Link
+              to="/patient-checkin"
+              target="_blank"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-400/40 rounded-xl text-sm font-semibold backdrop-blur-md transition-all"
+            >
+              <HeartPulse className="w-4 h-4 text-emerald-300" />
+              <span>Open Patient Kiosk</span>
+            </Link>
+            <Link
               to="/patients/new"
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-sm font-semibold backdrop-blur-md transition-all hover:bg-white/25"
             >
@@ -105,6 +130,23 @@ export const DashboardPage: React.FC = () => {
 
       {/* Stats Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Waiting Room Card */}
+        <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/5 p-5 rounded-2xl border border-emerald-200 shadow-2xs hover:shadow-md transition-shadow relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                Waiting in OPD
+              </p>
+              <h3 className="text-2xl font-black text-emerald-950 mt-1">{waitingPatientsCount}</h3>
+              <p className="text-xs text-emerald-700 font-medium mt-1">Pre-Check-in submissions</p>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center border border-emerald-300">
+              <HeartPulse className="w-6 h-6" />
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
@@ -116,23 +158,6 @@ export const DashboardPage: React.FC = () => {
             </div>
             <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-100">
               <Users className="w-6 h-6" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Total Cases
-              </p>
-              <h3 className="text-2xl font-black text-slate-900 mt-1">{cases.length}</h3>
-              <p className="text-xs text-emerald-600 font-medium mt-1">
-                {cases.filter((c) => c.status === 'Saved').length} Completed records
-              </p>
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-100">
-              <FileText className="w-6 h-6" />
             </div>
           </div>
         </div>
@@ -166,6 +191,136 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* WAITING ROOM / PATIENT PRE-CHECK-IN QUEUE SECTION */}
+      {/* ============================================================ */}
+      <div className="bg-white rounded-2xl border border-emerald-200/80 shadow-sm overflow-hidden">
+        <div className="p-5 bg-gradient-to-r from-teal-900 via-emerald-950 to-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center">
+              <HeartPulse className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold">OPD Waiting Room: Pre-Consultation Queue</h2>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-400 text-slate-950">
+                  {waitingPatientsCount} Waiting
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Patients who submitted symptoms via self-check-in kiosk before consultation
+              </p>
+            </div>
+          </div>
+
+          <Link
+            to="/patient-checkin"
+            target="_blank"
+            className="text-xs font-semibold text-emerald-200 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <PlusCircle className="w-3.5 h-3.5 text-amber-300" />
+            <span>Open Kiosk Form</span>
+          </Link>
+        </div>
+
+        {preIntakes.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 text-xs">
+            No patients currently waiting in pre-check-in queue.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {preIntakes.map((intake) => (
+              <div
+                key={intake.id}
+                className="p-4 sm:p-5 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4"
+              >
+                <div className="flex items-start gap-3.5">
+                  {/* Token badge */}
+                  <div className="px-3 py-2 rounded-xl bg-gradient-to-br from-teal-700 to-blue-900 text-white font-mono font-black text-sm text-center shadow-xs shrink-0">
+                    <span className="text-[9px] uppercase block text-teal-200 font-semibold">
+                      Token
+                    </span>
+                    {intake.tokenNumber}
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-sm text-slate-900">{intake.patientName}</h4>
+                      <span className="text-xs text-slate-500 font-medium">
+                        ({intake.age}y • {intake.gender} • {intake.city || 'Delhi'})
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md border ${getSystemBadgeColor(
+                          intake.preferredAyushSystem
+                        )}`}
+                      >
+                        {intake.preferredAyushSystem}
+                      </span>
+                      {intake.status === 'Waiting' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
+                          Waiting
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                          {intake.status}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-slate-700 leading-relaxed font-medium bg-slate-50 p-2.5 rounded-lg border border-slate-200/80">
+                      <strong className="text-slate-900 font-bold">Patient Reported: </strong>
+                      "{intake.chiefComplaints}"
+                      {intake.duration && (
+                        <span className="text-slate-500 font-normal">
+                          {' '}
+                          (Duration: {intake.duration})
+                        </span>
+                      )}
+                    </p>
+
+                    <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        Submitted: {new Date(intake.submittedAt).toLocaleTimeString()}
+                      </span>
+                      <span>Phone: {intake.phone}</span>
+                      {intake.allergies && intake.allergies !== 'None' && (
+                        <span className="text-amber-700 font-semibold">
+                          Allergy: {intake.allergies}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Take case button */}
+                <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleStartConsultation(intake)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-950/20 transition-all hover:scale-105 active:scale-95"
+                  >
+                    <Stethoscope className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Take Case (Load Details)</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePreIntake(intake.id)}
+                    title="Dismiss patient from queue"
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* AYUSH Discipline Breakdown Badges */}

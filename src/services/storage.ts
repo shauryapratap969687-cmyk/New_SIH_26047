@@ -1,9 +1,10 @@
-import type { Patient, CaseRecord, DoctorSession } from '../types';
+import type { Patient, CaseRecord, DoctorSession, PreConsultationIntake } from '../types';
 
 const STORAGE_KEYS = {
   SESSION: 'ayush_session',
   PATIENTS: 'ayush_patients',
   CASES: 'ayush_cases',
+  PRE_INTAKES: 'ayush_pre_intakes',
 } as const;
 
 export const DEMO_DOCTOR: DoctorSession = {
@@ -57,6 +58,41 @@ const SAMPLE_PATIENTS: Patient[] = [
     allergies: 'Sulfa drugs',
     consent: true,
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
+  },
+];
+
+const SAMPLE_PRE_INTAKES: PreConsultationIntake[] = [
+  {
+    id: 'pre-1',
+    tokenNumber: 'OPD-01',
+    patientName: 'Ananya Sharma',
+    age: '29',
+    gender: 'Female',
+    phone: '+91 98111 22334',
+    city: 'New Delhi',
+    preferredAyushSystem: 'Ayurveda',
+    chiefComplaints: 'Chronic acidity, burning sensation in chest after meals, irregular digestion and bloating since 2 months.',
+    duration: '2 Months',
+    allergies: 'None',
+    previousTreatment: 'Antacid gel took intermittently',
+    submittedAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+    status: 'Waiting',
+  },
+  {
+    id: 'pre-2',
+    tokenNumber: 'OPD-02',
+    patientName: 'Gurpreet Singh',
+    age: '42',
+    gender: 'Male',
+    phone: '+91 98222 33445',
+    city: 'Amritsar',
+    preferredAyushSystem: 'Yoga & Naturopathy',
+    chiefComplaints: 'Low back stiffness, high work stress, difficulty sleeping past midnight, sedentary desk job posture aches.',
+    duration: '6 Months',
+    allergies: 'Dust allergy',
+    previousTreatment: 'Physiotherapy for 1 week',
+    submittedAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
+    status: 'Waiting',
   },
 ];
 
@@ -362,6 +398,68 @@ export const storageService = {
     return `PAT-2026-${rand}`;
   },
 
+  // Pre-Consultation Patient Intakes (Self-Check-in)
+  getPreIntakes(): PreConsultationIntake[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.PRE_INTAKES);
+      if (!data) {
+        this.savePreIntakes(SAMPLE_PRE_INTAKES);
+        return SAMPLE_PRE_INTAKES;
+      }
+      return JSON.parse(data);
+    } catch {
+      return SAMPLE_PRE_INTAKES;
+    }
+  },
+
+  savePreIntakes(intakes: PreConsultationIntake[]): void {
+    localStorage.setItem(STORAGE_KEYS.PRE_INTAKES, JSON.stringify(intakes));
+  },
+
+  addPreIntake(intake: Omit<PreConsultationIntake, 'id' | 'tokenNumber' | 'submittedAt' | 'status'>): PreConsultationIntake {
+    const list = this.getPreIntakes();
+    const count = list.length + 1;
+    const tokenNumber = `OPD-${count < 10 ? '0' + count : count}`;
+    const newIntake: PreConsultationIntake = {
+      ...intake,
+      id: 'pre-' + Date.now(),
+      tokenNumber,
+      submittedAt: new Date().toISOString(),
+      status: 'Waiting',
+    };
+    list.unshift(newIntake);
+    this.savePreIntakes(list);
+    return newIntake;
+  },
+
+  getPreIntakeById(id: string): PreConsultationIntake | undefined {
+    const list = this.getPreIntakes();
+    return list.find((item) => item.id === id);
+  },
+
+  updatePreIntakeStatus(id: string, status: 'Waiting' | 'In Consultation' | 'Completed'): void {
+    const list = this.getPreIntakes();
+    const target = list.find((item) => item.id === id);
+    if (target) {
+      target.status = status;
+      this.savePreIntakes(list);
+    }
+  },
+
+  deletePreIntake(id: string): boolean {
+    const list = this.getPreIntakes();
+    const filtered = list.filter((item) => item.id !== id);
+    if (filtered.length !== list.length) {
+      this.savePrePreIntakes(filtered);
+      return true;
+    }
+    return false;
+  },
+
+  savePrePreIntakes(list: PreConsultationIntake[]): void {
+    localStorage.setItem(STORAGE_KEYS.PRE_INTAKES, JSON.stringify(list));
+  },
+
   // Cases
   getCases(): CaseRecord[] {
     try {
@@ -425,6 +523,9 @@ export const storageService = {
   init(): void {
     if (!localStorage.getItem(STORAGE_KEYS.PATIENTS)) {
       this.savePatients(SAMPLE_PATIENTS);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.PRE_INTAKES)) {
+      this.savePreIntakes(SAMPLE_PRE_INTAKES);
     }
     if (!localStorage.getItem(STORAGE_KEYS.CASES)) {
       this.saveCases(SAMPLE_CASES);

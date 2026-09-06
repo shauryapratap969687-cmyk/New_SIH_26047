@@ -45,15 +45,27 @@ export const CaseTakingPage: React.FC = () => {
   const { id: editCaseId } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const preselectedPatientId = searchParams.get('patientId');
+  const preIntakeId = searchParams.get('preIntakeId');
 
   const [patients] = useState<Patient[]>(() => storageService.getPatients());
 
   // Existing case if editing
   const existingCase = editCaseId ? storageService.getCaseById(editCaseId) : null;
+  // Pre-consultation intake if loaded from queue
+  const preIntakeData = preIntakeId ? storageService.getPreIntakeById(preIntakeId) : null;
 
   const [selectedPatientId, setSelectedPatientId] = useState<string>(() => {
     if (existingCase) return existingCase.patientId;
     if (preselectedPatientId) return preselectedPatientId;
+    if (preIntakeData) {
+      const allPatients = storageService.getPatients();
+      const matched = allPatients.find(
+        (p) =>
+          p.name.toLowerCase() === preIntakeData.patientName.toLowerCase() ||
+          p.phone === preIntakeData.phone
+      );
+      if (matched) return matched.id;
+    }
     const initialPatients = storageService.getPatients();
     return initialPatients.length > 0 ? initialPatients[0].id : '';
   });
@@ -65,6 +77,7 @@ export const CaseTakingPage: React.FC = () => {
 
   const [ayushSystem, setAyushSystem] = useState<AyushSystem>(() => {
     if (existingCase) return existingCase.ayushSystem;
+    if (preIntakeData) return preIntakeData.preferredAyushSystem;
     return 'Ayurveda';
   });
 
@@ -75,6 +88,15 @@ export const CaseTakingPage: React.FC = () => {
   // Form State
   const [complaints, setComplaints] = useState<PresentingComplaints>(() => {
     if (existingCase) return existingCase.presentingComplaints;
+    if (preIntakeData) {
+      return {
+        chiefComplaints: preIntakeData.chiefComplaints || '',
+        duration: preIntakeData.duration || '',
+        onsetProgression: '',
+        associatedSymptoms: '',
+        previousTreatment: preIntakeData.previousTreatment || '',
+      };
+    }
     return {
       chiefComplaints: '',
       duration: '',
@@ -287,6 +309,11 @@ export const CaseTakingPage: React.FC = () => {
 
     storageService.saveCase(newRecord);
 
+    // If loaded from pre-intake, mark it completed
+    if (preIntakeId) {
+      storageService.updatePreIntakeStatus(preIntakeId, 'Completed');
+    }
+
     setNotification({
       type: 'success',
       message: `Case record ${caseId} successfully ${
@@ -353,6 +380,29 @@ export const CaseTakingPage: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-16">
+      {/* Pre-Intake Loaded Alert Banner */}
+      {preIntakeData && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md flex items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center font-bold text-amber-300">
+              {preIntakeData.tokenNumber}
+            </div>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-200">
+                ✓ Pre-Consultation Data Loaded from Waiting Kiosk
+              </h4>
+              <p className="text-xs text-white">
+                Patient <strong>{preIntakeData.patientName}</strong>'s symptoms, duration, and{' '}
+                <strong>{preIntakeData.preferredAyushSystem}</strong> stream have been pre-filled!
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded-lg">
+            OPD Token #{preIntakeData.tokenNumber}
+          </span>
+        </div>
+      )}
+
       {/* Top Header Bar */}
       <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -2161,7 +2211,7 @@ export const CaseTakingPage: React.FC = () => {
                 {/* Envagai Thervu (8 Siddha Diagnostic Tools) */}
                 <div className="space-y-2 pt-2 border-t border-purple-200">
                   <h4 className="text-xs font-bold text-purple-950 uppercase tracking-wider">
-                    Envagai Thervu (எண்வகைத் தேர்வு - 8 Diagnostic Methods)
+                    Envagai Thervu (எண்वகைத் தேர்வு - 8 Diagnostic Methods)
                   </h4>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     <div>
