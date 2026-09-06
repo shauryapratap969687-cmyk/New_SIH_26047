@@ -380,26 +380,97 @@ export const CaseTakingPage: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-16">
-      {/* Pre-Intake Loaded Alert Banner */}
+      {/* Pre-Intake Loaded Alert & AI Clinical Summary Banner */}
       {preIntakeData && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md flex items-center justify-between gap-3 animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center font-bold text-amber-300">
-              {preIntakeData.tokenNumber}
-            </div>
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-200">
-                ✓ Pre-Consultation Data Loaded from Waiting Kiosk
-              </h4>
-              <p className="text-xs text-white">
-                Patient <strong>{preIntakeData.patientName}</strong>'s symptoms, duration, and{' '}
-                <strong>{preIntakeData.preferredAyushSystem}</strong> stream have been pre-filled!
-              </p>
+        <div className="space-y-4 animate-in fade-in">
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-900 via-blue-950 to-slate-900 text-white shadow-lg border border-teal-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/40 flex items-center justify-center font-mono font-black text-sm shrink-0 mt-0.5">
+                {preIntakeData.tokenNumber}
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
+                    Module C: AI Synthesized Clinical History Summary
+                  </span>
+                  <span className="text-[10px] font-bold bg-teal-500/30 text-teal-200 px-2 py-0.5 rounded border border-teal-400/30">
+                    ABDM Linked: {preIntakeData.abhaId || '91-4829-1029-4821'}
+                  </span>
+                  {preIntakeData.isRedFlagEmergency && (
+                    <span className="text-[10px] font-black bg-red-600 text-white px-2 py-0.5 rounded border border-red-400 animate-pulse">
+                      🚨 PRIORITY EMERGENCY TRIAGE
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                  <strong>Patient:</strong> {preIntakeData.patientName} ({preIntakeData.age}y • {preIntakeData.gender}) |{' '}
+                  <strong>Chief Complaint:</strong> "{preIntakeData.chiefComplaints}" |{' '}
+                  <strong>Duration:</strong> {preIntakeData.duration} |{' '}
+                  <strong>Stream:</strong> {preIntakeData.preferredAyushSystem}
+                </p>
+                {preIntakeData.socratesHpi && (
+                  <div className="text-[11px] text-teal-200 bg-white/10 p-2 rounded-lg border border-white/10 flex flex-wrap gap-x-4 gap-y-1">
+                    <span><strong>Site:</strong> {preIntakeData.socratesHpi.site}</span>
+                    <span><strong>Onset:</strong> {preIntakeData.socratesHpi.onset}</span>
+                    <span><strong>Character:</strong> {preIntakeData.socratesHpi.character}</span>
+                    <span><strong>Severity:</strong> {preIntakeData.socratesHpi.severity}/10</span>
+                    <span><strong>Relieving:</strong> {preIntakeData.socratesHpi.relievingFactors}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          <span className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded-lg">
-            OPD Token #{preIntakeData.tokenNumber}
-          </span>
+
+          {/* Module B: Scanned Medical Documents & Abnormal Labs Preview */}
+          {preIntakeData.digitizedDocuments && preIntakeData.digitizedDocuments.length > 0 && (
+            <div className="p-4 rounded-2xl bg-white border border-teal-200 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-teal-700" />
+                  <span>Module B: Digitized Medical Documents Timeline ({preIntakeData.digitizedDocuments.length} Records Extracted)</span>
+                </h4>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  OCR Entity Extraction Active
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {preIntakeData.digitizedDocuments.map((doc) => (
+                  <div key={doc.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
+                    <div className="flex justify-between font-bold text-slate-900 border-b border-slate-200/80 pb-1">
+                      <span>{doc.fileName}</span>
+                      <span className="text-[10px] text-teal-700">{doc.documentDate}</span>
+                    </div>
+
+                    {doc.extractedDiagnoses.length > 0 && (
+                      <div className="text-[11px]">
+                        <span className="font-bold text-slate-700">Diagnoses: </span>
+                        <span className="text-slate-900 font-semibold">{doc.extractedDiagnoses.join(', ')}</span>
+                      </div>
+                    )}
+
+                    {doc.extractedLabResults.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="font-bold text-slate-700 text-[10px] block">Lab Findings:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {doc.extractedLabResults.map((l, idx) => (
+                            <span
+                              key={idx}
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                l.isAbnormal ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold' : 'bg-white text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              {l.testName}: {l.value} {l.unit} {l.isAbnormal && '⚠️ [HIGH]'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

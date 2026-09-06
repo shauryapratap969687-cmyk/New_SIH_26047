@@ -75,6 +75,9 @@ const SAMPLE_PRE_INTAKES: PreConsultationIntake[] = [
     duration: '2 Months',
     allergies: 'None',
     previousTreatment: 'Antacid gel took intermittently',
+    isRedFlagEmergency: false,
+    dpdpConsentGranted: true,
+    consentLanguage: 'en',
     submittedAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
     status: 'Waiting',
   },
@@ -91,6 +94,9 @@ const SAMPLE_PRE_INTAKES: PreConsultationIntake[] = [
     duration: '6 Months',
     allergies: 'Dust allergy',
     previousTreatment: 'Physiotherapy for 1 week',
+    isRedFlagEmergency: false,
+    dpdpConsentGranted: true,
+    consentLanguage: 'en',
     submittedAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
     status: 'Waiting',
   },
@@ -437,7 +443,10 @@ export const storageService = {
     return list.find((item) => item.id === id);
   },
 
-  updatePreIntakeStatus(id: string, status: 'Waiting' | 'In Consultation' | 'Completed'): void {
+  updatePreIntakeStatus(
+    id: string,
+    status: 'Waiting' | 'Priority Triage (Red Flag)' | 'In Consultation' | 'Completed'
+  ): void {
     const list = this.getPreIntakes();
     const target = list.find((item) => item.id === id);
     if (target) {

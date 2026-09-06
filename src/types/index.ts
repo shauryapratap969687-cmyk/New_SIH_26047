@@ -17,6 +17,7 @@ export interface DoctorSession {
 export interface Patient {
   id: string;
   registrationNo: string;
+  abhaId?: string; // ABHA Health ID e.g. 91-4829-1029-4821 or name@abdm
   name: string;
   age: string;
   gender: 'Male' | 'Female' | 'Other';
@@ -26,24 +27,105 @@ export interface Patient {
   emergencyContact: string;
   allergies: string;
   consent: boolean;
+  consentTimestamp?: string;
   createdAt: string;
 }
 
+// Socrates Clinical Framework for Adaptive HPI
+export interface SocratesHPI {
+  site: string; // S - Where is the pain/problem?
+  onset: string; // O - When & how did it start? (Sudden / Gradual)
+  character: string; // C - What is it like? (Aching, throbbing, burning, sharp, dull)
+  radiation: string; // R - Does it spread anywhere?
+  associatedSymptoms: string[]; // A - Associated symptoms
+  timingDuration: string; // T - How long, constant or comes in waves?
+  exacerbatingFactors: string; // E - What makes it worse?
+  relievingFactors: string; // E - What makes it better?
+  severity: number; // S - Pain/Discomfort scale (1 to 10)
+}
+
+// Module B: Medical Document Digitization & OCR Intelligence
+export interface DigitizedLabResult {
+  testName: string;
+  value: string;
+  unit: string;
+  referenceRange: string;
+  isAbnormal: boolean;
+  flagType?: 'High' | 'Low' | 'Critical' | 'Normal';
+}
+
+export interface DigitizedMedication {
+  medicineName: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  category: 'Allopathic' | 'Ayurvedic' | 'Unani' | 'Homoeopathic' | 'Other';
+}
+
+export interface DigitizedDocument {
+  id: string;
+  documentType: 'Prescription' | 'Lab Report' | 'Discharge Summary' | 'Scan/X-Ray';
+  fileName: string;
+  documentDate: string;
+  doctorOrLabName: string;
+  extractedDiagnoses: string[];
+  extractedMedications: DigitizedMedication[];
+  extractedLabResults: DigitizedLabResult[];
+  extractedProcedures: string[];
+  potentialDrugInteractions?: string[];
+  uploadedAt: string;
+}
+
+// Pre-Consultation Intake with Full Multimodal & Red-Flag Triage
 export interface PreConsultationIntake {
   id: string;
   tokenNumber: string;
+  abhaId?: string;
   patientName: string;
   age: string;
   gender: 'Male' | 'Female' | 'Other';
   phone: string;
   city?: string;
   preferredAyushSystem: AyushSystem;
+  
+  // Chief complaint & Socrates
   chiefComplaints: string;
   duration: string;
+  socratesHpi?: SocratesHPI;
+  
+  // AYUSH Dashavidha & Lifestyle
+  dashavidhaSelfAssessment?: {
+    prakritiSelf?: string;
+    aharaPattern?: string;
+    viharaRoutine?: string;
+    sleepPattern?: string;
+    appetiteState?: string;
+    bowelHabit?: string;
+  };
+  
+  // Medical history & Allergies
+  pastMedicalHistory?: string;
+  familyHistory?: string;
   allergies?: string;
   previousTreatment?: string;
+  
+  // Digitized Documents
+  digitizedDocuments?: DigitizedDocument[];
+
+  // Red-Flag Emergency Detection
+  isRedFlagEmergency: boolean;
+  redFlagDetails?: {
+    category: 'Cardiovascular' | 'Neurological' | 'Respiratory' | 'Acute Abdomen' | 'Severe Infection' | 'None';
+    symptomsTriggered: string[];
+    actionTaken: string;
+  };
+  
+  // Consent & DPDP Act 2023
+  dpdpConsentGranted: boolean;
+  consentLanguage: 'en' | 'hi';
+  
   submittedAt: string;
-  status: 'Waiting' | 'In Consultation' | 'Completed';
+  status: 'Waiting' | 'Priority Triage (Red Flag)' | 'In Consultation' | 'Completed';
 }
 
 export interface PresentingComplaints {
@@ -52,6 +134,7 @@ export interface PresentingComplaints {
   onsetProgression: string;
   associatedSymptoms: string;
   previousTreatment: string;
+  socratesHpi?: SocratesHPI;
 }
 
 export interface GeneralHistory {
@@ -209,6 +292,7 @@ export interface CaseRecord {
   id: string;
   patientId: string;
   patientName: string;
+  abhaId?: string;
   caseDate: string;
   ayushSystem: AyushSystem;
   status: 'Draft' | 'Saved';
@@ -216,6 +300,7 @@ export interface CaseRecord {
   generalHistory: GeneralHistory;
   vitals: VitalsAndExam;
   ayushAssessment: AyushAssessment;
+  digitizedDocuments?: DigitizedDocument[];
   notesAndPlan: NotesAndPlan;
   createdAt: string;
   updatedAt: string;
