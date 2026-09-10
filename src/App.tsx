@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
+import { AccessibilityProvider } from './components/AccessibilityProvider';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AddPatientPage } from './pages/AddPatientPage';
@@ -26,9 +27,10 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 export const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+    <AccessibilityProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
           {/* Public Login Route */}
           <Route path="/login" element={<LoginPage />} />
 
@@ -106,8 +108,9 @@ export const App: React.FC = () => {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+        </BrowserRouter>
+      </AuthProvider>
+    </AccessibilityProvider>
   );
 };
 

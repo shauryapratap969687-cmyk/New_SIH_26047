@@ -1,44 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  Stethoscope,
-  User,
-  HeartPulse,
-  Sparkles,
-  CheckCircle2,
-  Clock,
-  ArrowRight,
-  AlertCircle,
-  RotateCcw,
-  Volume2,
-  VolumeX,
-  Eye,
-  Languages,
-  Upload,
-  FileCheck,
-  AlertTriangle,
-  Flame,
-  Activity,
-  Layers,
-  QrCode,
-  Sliders,
-  Zap,
-} from 'lucide-react';
 import { storageService } from '../services/storage';
-import type {
-  AyushSystem,
-  PreConsultationIntake,
-  SocratesHPI,
-  DigitizedDocument,
-} from '../types';
-import { VoiceDictationButton } from '../components/VoiceDictationButton';
 import {
-  detectRedFlags,
-  speakAudioPrompt,
-  stopAudioPrompt,
-  SAMPLE_PRESET_DOCUMENTS,
-  processDocumentOCR,
-} from '../services/aiIntelligence';
+  loginWithAbha,
+  loginWithAadhaar,
+  registerNewPatient,
+  pushToHis,
+  generateFhirBundle,
+} from '../services/abhaService';
+import type { AbhaPatientProfile } from '../services/abhaService';
+import {
+  getActiveQuestions,
+  getOptionLabel,
+  checkAnswerForRedFlag,
+  answersToSocratesHpi,
+} from '../services/adaptiveQuestioning';
+import type { AdaptiveAnswers, AdaptiveQuestion, AnswerOption } from '../services/adaptiveQuestioning';
+import { detectRedFlags, processDocumentOCR, SAMPLE_PRESET_DOCUMENTS } from '../services/aiIntelligence';
+import type { DigitizedDocument } from '../types';
+import type { AyushSystem, PreConsultationIntake } from '../types';
+import { useA11y } from '../components/AccessibilityProvider';
+import { AudioProgressBar } from '../components/AudioProgressBar';
+import type { ProgressStep } from '../components/AudioProgressBar';
+import { RepeatBackButton } from '../components/RepeatBackButton';
+import { AccessibilityToolbar } from '../components/AccessibilityToolbar';
+import { useAutoSpeak } from '../hooks/useAutoSpeak';
+import { STRINGS, LANG_META } from '../i18n/strings';
+import type { SupportedLang } from '../i18n/strings';
+
+// ---- Constants ----
+const KIOSK_STEPS: ProgressStep[] = [
+  { id: 1, icon: '🪪', label: 'Identify', labelKey: 'stepIdentify' },
+  { id: 2, icon: '🗣️', label: 'Tell Us', labelKey: 'stepConverse' },
+  { id: 3, icon: '📄', label: 'Scan', labelKey: 'stepScan' },
+  { id: 4, icon: '📋', label: 'Summary', labelKey: 'stepSummarize' },
+  { id: 5, icon: '✅', label: 'Done', labelKey: 'stepDone' },
+];
 
 const AYUSH_SYSTEMS: AyushSystem[] = [
   'Ayurveda',
@@ -48,1211 +45,1540 @@ const AYUSH_SYSTEMS: AyushSystem[] = [
   'Homoeopathy',
 ];
 
-const COMMON_SYMPTOM_TAGS = [
-  'Knee Joint Pain (जानु शूल)',
-  'Acidity & Bloating (अम्लपित्त)',
-  'Headache / Migraine (शिरःशूल)',
-  'Lower Back Pain (कटिशूल)',
-  'Chronic Cough (कास)',
-  'Indigestion / Weak Agni (अग्निमांद्य)',
-  'Insomnia / Disturbed Sleep (अनिद्रा)',
-  'Skin Rash / Itching (त्वक विकार)',
-  'High Stress / Anxiety (चित्तोद्वेग)',
-  'Chest Heaviness / Pain (छाती में भारीपन)',
-];
+const AYUSH_ICONS: Record<AyushSystem, string> = {
+  'Ayurveda': '🌿',
+  'Yoga & Naturopathy': '🧘',
+  'Unani': '⚗️',
+  'Siddha': '🔮',
+  'Homoeopathy': '💊',
+};
 
-const SITE_TAGS = ['Head / Temple', 'Neck & Shoulders', 'Chest (छाती)', 'Upper Abdomen', 'Lower Back (कमर)', 'Bilateral Knees (घुटने)', 'Skin / Whole Body'];
-const ONSET_TAGS = ['Gradual / Slowly worsening', 'Sudden onset (अचानक)', 'Intermittent attacks', 'Seasonal aggravation (शीत ऋतु)'];
-const CHARACTER_TAGS = ['Dull aching (मीठा दर्द)', 'Throbbing (धड़कन जैसा)', 'Burning sensation (जलन/दाह)', 'Sharp stabbing', 'Stiffness & Crepitus (जकड़न)'];
-const RADIATION_TAGS = ['Localized (एक ही जगह)', 'Spreads to Left Arm/Jaw (🚨)', 'Radiates down the leg (Sciatica)', 'Spreads to back & neck'];
+type KioskStep = 1 | 2 | 3 | 4 | 5;
+type AuthMethod = 'abha' | 'aadhaar' | 'register';
 
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export const PatientCheckinPage: React.FC = () => {
-  // Accessibility & Multilingual
-  const [lang, setLang] = useState<'en' | 'hi'>('en');
-  const [highContrast, setHighContrast] = useState(false);
-  const [audioGuidance, setAudioGuidance] = useState(true);
+  const { lang, setLang, t, speak, playTone } = useA11y();
 
-  // Stepper state (1: Identify & ABHA, 2: Converse & HPI, 3: AYUSH & History, 4: Document AI Scan, 5: Review & Submit)
-  const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1);
+  // ---- Session state (persisted to sessionStorage for resume) ----
+  const [kioskStep, setKioskStep] = useState<KioskStep>(1);
 
-  // Form State - Step 1
-  const [abhaId, setAbhaId] = useState('91-4829-1029-4821');
-  const [patientName, setPatientName] = useState('');
-  const [age, setAge] = useState('');
-  const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>('Male');
-  const [phone, setPhone] = useState('');
-  const [city, setCity] = useState('');
-  const [preferredAyushSystem, setPreferredAyushSystem] = useState<AyushSystem>('Ayurveda');
-  const [dpdpConsent, setDpdpConsent] = useState(true);
+  // ---- Step 1: Identify ----
+  const [langChosen, setLangChosen] = useState(false);
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('abha');
+  const [abhaInput, setAbhaInput] = useState('');
+  const [aadhaarInput, setAadhaarInput] = useState('');
+  const [regName, setRegName] = useState('');
+  const [regAge, setRegAge] = useState('');
+  const [regGender, setRegGender] = useState<'Male' | 'Female' | 'Other'>('Male');
+  const [regPhone, setRegPhone] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [patientProfile, setPatientProfile] = useState<AbhaPatientProfile | null>(null);
+  const [consentStep, setConsentStep] = useState(false);
+  const [consentGranted, setConsentGranted] = useState(false);
+  const [consentParagraph, setConsentParagraph] = useState(0);
+  const [preferredSystem, setPreferredSystem] = useState<AyushSystem>('Ayurveda');
 
-  // Form State - Step 2 (Chief complaints & SOCRATES)
-  const [chiefComplaints, setChiefComplaints] = useState('');
-  const [duration, setDuration] = useState('3 Months');
-  const [socrates, setSocrates] = useState<SocratesHPI>({
-    site: 'Bilateral Knees (घुटने)',
-    onset: 'Gradual / Slowly worsening',
-    character: 'Dull aching with stiffness',
-    radiation: 'Localized (एक ही जगह)',
-    associatedSymptoms: ['Morning stiffness > 20 mins', 'Difficulty climbing stairs'],
-    timingDuration: 'Worse in cold mornings',
-    exacerbatingFactors: 'Prolonged walking, cold weather',
-    relievingFactors: 'Warm fomentation, rest',
-    severity: 6,
-  });
+  // ---- Step 2: Converse ----
+  const [answers, setAnswers] = useState<AdaptiveAnswers>({});
+  const [questionIdx, setQuestionIdx] = useState(0);
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const [currentFreeText, setCurrentFreeText] = useState('');
+  const [yesNoAnswer, setYesNoAnswer] = useState<boolean | null>(null);
+  const [sliderValue, setSliderValue] = useState(5);
+  const [emergencyDetected, setEmergencyDetected] = useState(false);
+  const [emergencyDismissed, setEmergencyDismissed] = useState(false);
+  const [redFlagResult, setRedFlagResult] = useState<ReturnType<typeof detectRedFlags> | null>(null);
+  const recognitionRef = useRef<InstanceType<typeof window.SpeechRecognition> | null>(null);
 
-  // Form State - Step 3 (AYUSH Dashavidha & Lifestyle)
-  const [prakritiSelf, setPrakritiSelf] = useState('Vata-Pitta (Dry skin, active mind, light sleep)');
-  const [aharaHabit, setAharaHabit] = useState('Irregular meal timings, spicy/dry snacks');
-  const [viharaHabit, setViharaHabit] = useState('Desk sitting > 8 hours, late night screen time');
-  const [allergies, setAllergies] = useState('None');
-  const [priorTreatments, setPriorTreatments] = useState('Painkillers (NSAIDs) with temporary relief');
+  // ---- Step 3: Scan ----
+  const [documents, setDocuments] = useState<DigitizedDocument[]>([]);
+  const [scanLoading, setScanLoading] = useState(false);
 
-  // Form State - Step 4 (Document AI & Scanning)
-  const [uploadedDocs, setUploadedDocs] = useState<DigitizedDocument[]>([
-    SAMPLE_PRESET_DOCUMENTS[0], // Preloaded Cardiology Rx
-    SAMPLE_PRESET_DOCUMENTS[1], // Preloaded Lal PathLabs Metabolic Panel
-  ]);
-  const [isProcessingDoc, setIsProcessingDoc] = useState(false);
+  // ---- Step 4: Summary ----
+  const [hisPushed, setHisPushed] = useState(false);
+  const [hisPushResult, setHisPushResult] = useState<{ referenceId: string; message: string } | null>(null);
+  const [showFhirModal, setShowFhirModal] = useState(false);
+  const [fhirBundle, setFhirBundle] = useState<object | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
-  // Submission State
-  const [submittedToken, setSubmittedToken] = useState<PreConsultationIntake | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // ---- Step 5: Token ----
+  const [tokenNumber, setTokenNumber] = useState('');
+  const [submittedIntake, setSubmittedIntake] = useState<PreConsultationIntake | null>(null);
 
-  // Red Flag Dismiss State
-  const [dismissedEmergency, setDismissedEmergency] = useState(false);
-
-  // Live Red Flag Checker derived via useMemo
-  const redFlagResult = React.useMemo(() => {
-    return detectRedFlags(chiefComplaints, socrates, socrates.associatedSymptoms);
-  }, [chiefComplaints, socrates]);
-
-  const showRedFlagModal = redFlagResult.isEmergency && !dismissedEmergency;
-
-  // Speak emergency warning once if newly triggered
+  // ============================================================
+  // SESSION AUTO-SAVE & RESTORE
+  // ============================================================
   useEffect(() => {
-    if (redFlagResult.isEmergency && !dismissedEmergency && audioGuidance) {
-      speakAudioPrompt(
-        lang === 'hi'
-          ? 'आपातकालीन चेतावनी! आपके द्वारा दर्ज लक्षण तत्काल आपातकालीन ट्राइएज की मांग करते हैं।'
-          : 'Emergency Priority Alert! Your symptoms require immediate triage care.',
-        lang === 'hi' ? 'hi-IN' : 'en-IN'
-      );
+    const saved = sessionStorage.getItem('medikiosk_session');
+    if (saved) {
+      try {
+        const s = JSON.parse(saved);
+        if (s.kioskStep) setKioskStep(s.kioskStep);
+        if (s.patientProfile) setPatientProfile(s.patientProfile);
+        if (s.answers) setAnswers(s.answers);
+        if (s.preferredSystem) setPreferredSystem(s.preferredSystem);
+        if (s.consentGranted) setConsentGranted(s.consentGranted);
+        if (s.langChosen) setLangChosen(s.langChosen);
+      } catch { /* ignore */ }
     }
-  }, [redFlagResult.isEmergency, dismissedEmergency, audioGuidance, lang]);
+  }, []);
 
-  // Audio prompt on step change
-  const triggerAudioGuidance = (promptText: string) => {
-    if (!audioGuidance) return;
-    speakAudioPrompt(promptText, lang === 'hi' ? 'hi-IN' : 'en-IN');
+  useEffect(() => {
+    const session = {
+      kioskStep,
+      patientProfile,
+      answers,
+      preferredSystem,
+      consentGranted,
+      langChosen,
+    };
+    sessionStorage.setItem('medikiosk_session', JSON.stringify(session));
+  }, [kioskStep, patientProfile, answers, preferredSystem, consentGranted, langChosen]);
+
+  // ============================================================
+  // ACTIVE QUESTIONS
+  // ============================================================
+  const activeQuestions = useMemo(() => getActiveQuestions(answers), [answers]);
+  const currentQuestion: AdaptiveQuestion | undefined = activeQuestions[questionIdx];
+
+  // ============================================================
+  // AUTO-SPEAK on step change
+  // ============================================================
+  useAutoSpeak(() => {
+    if (kioskStep === 1 && !langChosen) return t('langSelectAudio');
+    if (kioskStep === 1 && !consentStep) return t('authSubtitle');
+    if (kioskStep === 1 && consentStep) return t('consentAudioIntro');
+    if (kioskStep === 2 && currentQuestion) return t(currentQuestion.audioKey);
+    if (kioskStep === 3) return t('scanAudioGuide');
+    if (kioskStep === 4) return t('summaryAudioConfirm');
+    if (kioskStep === 5 && tokenNumber) return t('tokenAudio').replace('{token}', tokenNumber);
+    return '';
+  }, [kioskStep, langChosen, consentStep, questionIdx, tokenNumber]);
+
+  // ============================================================
+  // VOICE RECOGNITION
+  // ============================================================
+  const startListening = useCallback((onResult: (text: string) => void) => {
+    const SpeechRecognition = window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition: typeof window.SpeechRecognition }).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      speak(t('errorNoMic'));
+      return;
+    }
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    const rec = new SpeechRecognition();
+    rec.lang = LANG_META[lang].ttsLang;
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onstart = () => {
+      setIsListeningVoice(true);
+      playTone('listening');
+    };
+    rec.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      playTone('done');
+      setIsListeningVoice(false);
+      onResult(transcript);
+    };
+    rec.onerror = () => {
+      setIsListeningVoice(false);
+      playTone('error');
+    };
+    rec.onend = () => setIsListeningVoice(false);
+    rec.start();
+    recognitionRef.current = rec;
+  }, [lang, speak, t, playTone]);
+
+  // ============================================================
+  // CONSENT VOICE INPUT
+  // ============================================================
+  const listenForConsent = () => {
+    startListening((text) => {
+      const lower = text.toLowerCase();
+      if (['yes', 'हां', 'haan', 'ha', 'ஆம்', 'aam', 'হ্যাঁ', 'hayn', 'agree', 'ok', 'okay'].some(w => lower.includes(w))) {
+        handleConsentGrant();
+      }
+    });
   };
 
-  const handleFillDemoPatient = () => {
-    setAbhaId('91-4829-1029-4821');
-    setPatientName('Rajesh Kumar');
-    setAge('46');
-    setGender('Male');
-    setPhone('+91 98765 43210');
-    setCity('Rohini, New Delhi');
-    setPreferredAyushSystem('Ayurveda');
-    setChiefComplaints('Severe bilateral knee joint pain, crepitus sound on walking, and morning joint stiffness.');
-    setDuration('8 Months');
-    setError(null);
+  // ============================================================
+  // STEP NAVIGATION
+  // ============================================================
+  const goToStep = useCallback((step: KioskStep) => {
+    setKioskStep(step);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleBack = () => {
+    if (kioskStep === 2 && questionIdx > 0) {
+      setQuestionIdx(q => q - 1);
+    } else if (kioskStep > 1) {
+      goToStep((kioskStep - 1) as KioskStep);
+    }
   };
 
+  // ============================================================
+  // STEP 1 — AUTH
+  // ============================================================
+  const handleAuth = async () => {
+    setAuthError('');
+    setAuthLoading(true);
+    playTone('processing');
+
+    let result: { success: boolean; profile?: AbhaPatientProfile; error?: string };
+    if (authMethod === 'abha') {
+      result = await loginWithAbha(abhaInput);
+    } else if (authMethod === 'aadhaar') {
+      result = await loginWithAadhaar(aadhaarInput);
+    } else {
+      result = await registerNewPatient({ name: regName, age: regAge, gender: regGender, phone: regPhone });
+    }
+
+    setAuthLoading(false);
+    if (result.success && result.profile) {
+      playTone('done');
+      setPatientProfile(result.profile);
+      setConsentStep(true);
+      speak(`Welcome, ${result.profile.name}. Please listen to our privacy notice.`);
+    } else {
+      playTone('error');
+      setAuthError(result.error || t('errorGeneral'));
+      speak(result.error || t('errorGeneral'));
+    }
+  };
+
+  const handleConsentGrant = () => {
+    setConsentGranted(true);
+    playTone('done');
+    speak(t('selectAyushSystem'));
+    setTimeout(() => goToStep(2), 500);
+  };
+
+  // ============================================================
+  // STEP 2 — ADAPTIVE QUESTIONING
+  // ============================================================
+  const handleSingleSelect = (optionId: string, question: AdaptiveQuestion) => {
+    const option = question.options?.find(o => o.id === optionId);
+    const isRedFlag = checkAnswerForRedFlag(question, [optionId]) || option?.isRedFlagTrigger;
+
+    const newAnswers = { ...answers };
+    if (question.socratesKey === 'site') newAnswers.site = optionId;
+    else if (question.socratesKey === 'onset') newAnswers.onset = optionId;
+    else if (question.socratesKey === 'character') newAnswers.character = optionId;
+    else if (question.socratesKey === 'radiation') newAnswers.radiation = optionId;
+    else if (question.socratesKey === 'timingDuration') newAnswers.timing = optionId;
+    else if (question.id === 'duration') newAnswers.duration = optionId;
+    else if (question.id === 'ahara_shakti') newAnswers.aharaShakti = optionId;
+    else if (question.id === 'prakriti') newAnswers.prakriti = optionId;
+
+    setAnswers(newAnswers);
+    playTone('done');
+
+    if (isRedFlag) {
+      runRedFlagCheck(newAnswers);
+    }
+    advanceQuestion(newAnswers);
+  };
+
+  const handleMultiSelect = (optionId: string, question: AdaptiveQuestion) => {
+    const newAnswers = { ...answers };
+    if (question.socratesKey === 'associatedSymptoms') {
+      const current = newAnswers.associatedSymptoms || [];
+      if (current.includes(optionId)) {
+        newAnswers.associatedSymptoms = current.filter(id => id !== optionId);
+      } else {
+        newAnswers.associatedSymptoms = [...current, optionId];
+        if (checkAnswerForRedFlag(question, [optionId])) {
+          runRedFlagCheck(newAnswers);
+        }
+      }
+    } else if (question.id === 'chief_complaint') {
+      const current = newAnswers.chiefComplaintTags || [];
+      if (current.includes(optionId)) {
+        newAnswers.chiefComplaintTags = current.filter(id => id !== optionId);
+      } else {
+        newAnswers.chiefComplaintTags = [...current, optionId];
+      }
+    } else if (question.id === 'ros') {
+      const current = newAnswers.ros || [];
+      newAnswers.ros = current.includes(optionId)
+        ? current.filter(id => id !== optionId)
+        : [...current, optionId];
+    }
+    setAnswers(newAnswers);
+  };
+
+  const handleFreeText = (text: string, question: AdaptiveQuestion) => {
+    const newAnswers = { ...answers };
+    if (question.socratesKey === 'exacerbatingFactors') newAnswers.exacerbatingFactors = text;
+    else if (question.socratesKey === 'relievingFactors') newAnswers.relievingFactors = text;
+    else if (question.id === 'past_medical') newAnswers.pastMedical = text;
+    else if (question.id === 'past_surgical') newAnswers.pastSurgical = text;
+    else if (question.id === 'drug_allergy') newAnswers.drugAllergy = text;
+    else if (question.id === 'family_history') newAnswers.familyHistory = text;
+    else if (question.id === 'personal_history') newAnswers.personalHistory = text;
+    else if (question.id === 'ahara_pattern') newAnswers.aharaPattern = text;
+    else if (question.id === 'vihara_routine') newAnswers.viharaRoutine = text;
+    setAnswers(newAnswers);
+  };
+
+  const advanceQuestion = (updatedAnswers: AdaptiveAnswers) => {
+    const nextActive = getActiveQuestions(updatedAnswers);
+    if (questionIdx < nextActive.length - 1) {
+      setQuestionIdx(q => q + 1);
+      setCurrentFreeText('');
+      setYesNoAnswer(null);
+      setSliderValue(5);
+    } else {
+      // All questions done → go to scan
+      goToStep(3);
+    }
+  };
+
+  const runRedFlagCheck = (updatedAnswers: AdaptiveAnswers) => {
+    const chiefText = (updatedAnswers.chiefComplaintTags || []).join(' ') + ' ' + (updatedAnswers.chiefComplaint || '');
+    const result = detectRedFlags(
+      chiefText,
+      answersToSocratesHpi(updatedAnswers),
+      updatedAnswers.associatedSymptoms || [],
+    );
+    if (result.isEmergency) {
+      setRedFlagResult(result);
+      setEmergencyDetected(true);
+      playTone('emergency');
+      speak(t('redFlagBody'));
+    }
+  };
+
+  // ============================================================
+  // STEP 3 — DOCUMENT SCAN
+  // ============================================================
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setIsProcessingDoc(true);
-      const file = e.target.files[0];
-      const parsedDoc = await processDocumentOCR(file);
-      setUploadedDocs((prev) => [parsedDoc, ...prev]);
-      setIsProcessingDoc(false);
+    const files = e.target.files;
+    if (!files) return;
+    setScanLoading(true);
+    speak(t('scanCaptured'));
+    playTone('processing');
+    const newDocs: DigitizedDocument[] = [];
+    for (const file of Array.from(files)) {
+      const doc = await processDocumentOCR(file);
+      newDocs.push(doc);
     }
+    setDocuments(prev => [...prev, ...newDocs]);
+    setScanLoading(false);
+    playTone('done');
+    speak(`${newDocs.length} document${newDocs.length > 1 ? 's' : ''} scanned and read successfully.`);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!patientName.trim()) {
-      setError(lang === 'hi' ? 'कृपया अपना पूरा नाम भरें।' : 'Please enter your full name.');
-      setActiveStep(1);
-      return;
-    }
-    if (!phone.trim()) {
-      setError(lang === 'hi' ? 'कृपया अपना मोबाइल नंबर भरें।' : 'Please enter your mobile phone number.');
-      setActiveStep(1);
-      return;
-    }
-    if (!chiefComplaints.trim()) {
-      setError(lang === 'hi' ? 'कृपया अपनी मुख्य स्वास्थ्य समस्या दर्ज करें।' : 'Please describe your main health complaints.');
-      setActiveStep(2);
-      return;
-    }
+  const handleUseSampleDocs = () => {
+    setDocuments(SAMPLE_PRESET_DOCUMENTS);
+    playTone('done');
+    speak('Sample medical records loaded. You can review them below.');
+  };
 
-    setError(null);
+  // ============================================================
+  // STEP 4 — SUMMARY & HIS PUSH
+  // ============================================================
+  const buildIntake = useCallback((): PreConsultationIntake => {
+    const socrates = answersToSocratesHpi(answers);
+    const chiefText = (answers.chiefComplaintTags || []).map(id => {
+      // map tag id back to label
+      return id.replace(/_/g, ' ');
+    }).join(', ');
 
-    const isEmergency = redFlagResult.isEmergency;
+    const rfResult = redFlagResult || detectRedFlags(chiefText, socrates, answers.associatedSymptoms || []);
+    const token = `OPD-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Save to repository
-    const newIntake = storageService.addPreIntake({
-      patientName: patientName.trim(),
-      age: age.trim() || '40',
-      gender,
-      phone: phone.trim(),
-      city: city.trim() || 'New Delhi',
-      preferredAyushSystem,
-      chiefComplaints: chiefComplaints.trim(),
-      duration: duration.trim() || 'Not specified',
-      allergies: allergies.trim() || 'None',
-      previousTreatment: priorTreatments.trim() || 'None',
+    return {
+      id: `intake-${Date.now()}`,
+      tokenNumber: token,
+      abhaId: patientProfile?.abhaId,
+      patientName: patientProfile?.name || regName,
+      age: patientProfile?.age || regAge,
+      gender: (patientProfile?.gender || regGender) as 'Male' | 'Female' | 'Other',
+      phone: patientProfile?.phone || regPhone,
+      preferredAyushSystem: preferredSystem,
+      chiefComplaints: chiefText,
+      duration: answers.duration || '',
       socratesHpi: socrates,
       dashavidhaSelfAssessment: {
-        prakritiSelf,
-        aharaPattern: aharaHabit,
-        viharaRoutine: viharaHabit,
+        prakritiSelf: answers.prakriti,
+        aharaPattern: answers.aharaPattern,
+        viharaRoutine: answers.viharaRoutine,
+        sleepPattern: answers.viharaRoutine,
+        appetiteState: answers.aharaShakti,
+        bowelHabit: answers.bowelHabit,
       },
-      digitizedDocuments: uploadedDocs,
-      isRedFlagEmergency: isEmergency,
-      redFlagDetails: isEmergency
-        ? {
-            category: redFlagResult.category,
-            symptomsTriggered: redFlagResult.symptomsTriggered,
-            actionTaken: redFlagResult.actionTaken,
-          }
-        : undefined,
-      dpdpConsentGranted: dpdpConsent,
-      consentLanguage: lang,
-    });
+      pastMedicalHistory: answers.pastMedical,
+      familyHistory: answers.familyHistory,
+      allergies: answers.drugAllergy,
+      previousTreatment: answers.personalHistory,
+      digitizedDocuments: documents.length > 0 ? documents : undefined,
+      isRedFlagEmergency: rfResult.isEmergency,
+      redFlagDetails: rfResult.isEmergency ? {
+        category: rfResult.category as Exclude<PreConsultationIntake['redFlagDetails'], undefined>['category'],
+        symptomsTriggered: rfResult.symptomsTriggered,
+        actionTaken: rfResult.actionTaken,
+      } : undefined,
+      dpdpConsentGranted: consentGranted,
+      consentLanguage: (lang === 'hi' ? 'hi' : 'en') as 'en' | 'hi',
+      submittedAt: new Date().toISOString(),
+      status: rfResult.isEmergency ? 'Priority Triage (Red Flag)' : 'Waiting',
+    };
+  }, [answers, patientProfile, regName, regAge, regGender, regPhone, preferredSystem, documents, redFlagResult, consentGranted, lang]);
 
-    // Update status if emergency
-    if (isEmergency) {
-      storageService.updatePreIntakeStatus(newIntake.id, 'Priority Triage (Red Flag)');
-      newIntake.status = 'Priority Triage (Red Flag)';
-    }
-
-    // Ensure registered in master patient registry
-    const existing = storageService.getPatients().find((p) => p.name.toLowerCase() === patientName.trim().toLowerCase());
-    if (!existing) {
-      storageService.addPatient({
-        registrationNo: storageService.generateRegistrationNo(),
-        name: patientName.trim(),
-        age: age.trim() || '40',
-        gender,
-        phone: phone.trim(),
-        address: city.trim() ? `${city.trim()}, India` : 'New Delhi, India',
-        occupation: 'Self / Citizen',
-        emergencyContact: `${phone.trim()} (Self)`,
-        allergies: allergies.trim() || 'None reported',
-        consent: true,
-      });
-    }
-
-    setSubmittedToken(newIntake);
-
-    if (audioGuidance) {
-      const confirmationMsg =
-        lang === 'hi'
-          ? `आपका पूर्व-परामर्श चेक-इन पूरा हो गया है। आपका OPD टोकन नंबर है ${newIntake.tokenNumber}।`
-          : `Your clinical pre-consultation is recorded. Your OPD token number is ${newIntake.tokenNumber}.`;
-      speakAudioPrompt(confirmationMsg, lang === 'hi' ? 'hi-IN' : 'en-IN');
-    }
+  const handlePushToHis = async () => {
+    setSummaryLoading(true);
+    playTone('processing');
+    speak(t('pushToHisBtn'));
+    const intake = buildIntake();
+    const result = await pushToHis(intake);
+    const bundle = generateFhirBundle(intake);
+    setFhirBundle(bundle);
+    setHisPushed(true);
+    setHisPushResult({ referenceId: result.referenceId, message: result.message });
+    setSummaryLoading(false);
+    playTone('done');
+    speak(t('pushSuccess'));
   };
 
-  return (
-    <div
-      className={`min-h-screen py-6 px-4 sm:px-6 lg:px-8 transition-colors ${
-        highContrast
-          ? 'bg-black text-white'
-          : 'bg-gradient-to-br from-slate-900 via-blue-950 to-teal-950 text-slate-100'
-      }`}
-    >
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* ============================================================ */}
-        {/* TOP ACCESSIBILITY & MINISTRY TOOLBAR */}
-        {/* ============================================================ */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/15 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-amber-300">🇮🇳 Ministry of Ayush • All India Institute of Ayurveda</span>
-            <span className="text-slate-400 hidden sm:inline">|</span>
-            <span className="text-teal-200 hidden sm:inline">MediKiosk AI Engine</span>
-          </div>
+  const handleFinalSubmit = () => {
+    const intake = buildIntake();
+    storageService.addPreIntake(intake);
+    setTokenNumber(intake.tokenNumber);
+    setSubmittedIntake(intake);
+    speak(t('tokenAudio').replace('{token}', intake.tokenNumber));
+    // Clear session
+    sessionStorage.removeItem('medikiosk_session');
+    goToStep(5);
+  };
 
-          {/* Accessibility & Language Controls */}
-          <div className="flex items-center gap-2">
-            {/* Audio Guidance Toggle */}
+  // ============================================================
+  // RENDER HELPERS
+  // ============================================================
+
+  const renderOptionGrid = (
+    question: AdaptiveQuestion,
+    selectedIds: string[],
+    onSelect: (id: string) => void,
+  ) => {
+    const isMulti = question.type === 'multi_select';
+    return (
+      <div
+        role={isMulti ? 'group' : 'radiogroup'}
+        aria-label={t(question.labelKey)}
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3"
+      >
+        {question.options?.map((opt: AnswerOption) => {
+          const label = getOptionLabel(opt, lang);
+          const isSelected = selectedIds.includes(opt.id);
+          return (
             <button
+              key={opt.id}
               type="button"
+              role={isMulti ? 'checkbox' : 'radio'}
+              aria-checked={isSelected}
+              aria-label={label}
               onClick={() => {
-                setAudioGuidance(!audioGuidance);
-                if (audioGuidance) stopAudioPrompt();
+                onSelect(opt.id);
+                speak(label);
               }}
-              title="Toggle Audio Assistant"
-              className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition-colors ${
-                audioGuidance ? 'bg-amber-400 text-slate-950' : 'bg-white/10 text-slate-300'
-              }`}
+              className={`
+                relative flex flex-col items-center justify-center gap-2
+                min-h-[80px] p-3 rounded-2xl border-2 text-center
+                transition-all duration-150 cursor-pointer
+                focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-400
+                active:scale-95
+                ${isSelected
+                  ? 'bg-teal-600 border-teal-600 text-white shadow-md'
+                  : 'bg-white border-slate-200 text-slate-700 hover:border-teal-300 hover:bg-teal-50'}
+                ${opt.isRedFlagTrigger && isSelected ? 'bg-red-600 border-red-600' : ''}
+              `}
             >
-              {audioGuidance ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-              <span className="text-[11px]">{audioGuidance ? 'Audio On' : 'Audio Muted'}</span>
-            </button>
-
-            {/* High Contrast Mode */}
-            <button
-              type="button"
-              onClick={() => setHighContrast(!highContrast)}
-              className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition-colors ${
-                highContrast ? 'bg-yellow-400 text-black font-bold' : 'bg-white/10 text-slate-300'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span className="text-[11px]">High Contrast</span>
-            </button>
-
-            {/* Bilingual Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                const nextLang = lang === 'en' ? 'hi' : 'en';
-                setLang(nextLang);
-                triggerAudioGuidance(nextLang === 'hi' ? 'भाषा बदलकर हिंदी कर दी गई है।' : 'Language set to English.');
-              }}
-              className="px-2.5 py-1 bg-teal-500/30 hover:bg-teal-500/50 text-teal-200 border border-teal-400/40 rounded-lg font-bold flex items-center gap-1 text-[11px]"
-            >
-              <Languages className="w-3.5 h-3.5" />
-              <span>{lang === 'en' ? 'हिंदी (Hindi)' : 'English'}</span>
-            </button>
-
-            <Link
-              to="/login"
-              className="text-[11px] text-teal-300 hover:text-white font-bold flex items-center gap-1 ml-1"
-            >
-              <span>Doctor Login</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-
-        {/* ============================================================ */}
-        {/* HERO TITLE & DEMO AUTO-FILL */}
-        {/* ============================================================ */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/20 text-teal-300 text-xs font-semibold border border-teal-500/30">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-            <span>AI-Powered Multimodal Clinical History & Triage Platform (MediKiosk)</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-            {lang === 'hi'
-              ? 'मरीज़ पूर्व-परामर्श इतिहास व दस्तावेज़ स्कैनिंग'
-              : 'Patient Pre-Consultation History & Smart AI Kiosk'}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-2xl mx-auto">
-            {lang === 'hi'
-              ? 'डॉक्टर से मिलने से पहले अपने लक्षण बोलकर या छूकर बताएं और पुरानी पर्चियां स्कैन करें।'
-              : 'Answer adaptive clinical questions via voice/touch and digitize prior medical records before your consultation.'}
-          </p>
-
-          <button
-            type="button"
-            onClick={handleFillDemoPatient}
-            className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40 rounded-full text-xs font-bold transition-all mt-1"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Auto-Fill Demo Patient Data</span>
-          </button>
-        </div>
-
-        {/* ============================================================ */}
-        {/* RED-FLAG EMERGENCY POPUP MODAL (MODULE A) */}
-        {/* ============================================================ */}
-        {showRedFlagModal && redFlagResult.isEmergency && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-red-950 border-2 border-red-500 text-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-5 animate-in zoom-in-95">
-              <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-red-600 text-white flex items-center justify-center shadow-lg animate-bounce">
-                  <Flame className="w-8 h-8" />
-                </div>
-                <div>
-                  <span className="text-[11px] font-black uppercase tracking-widest text-red-300 bg-red-900/60 px-2 py-0.5 rounded border border-red-500">
-                    Emergency Triage Alert
-                  </span>
-                  <h3 className="text-xl font-black text-white mt-1">
-                    Red-Flag Symptoms Detected!
-                  </h3>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-red-900/40 border border-red-700/60 text-xs space-y-2">
-                <p className="font-bold text-red-200">
-                  Trigger Category: <span className="text-amber-300">{redFlagResult.category}</span>
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {redFlagResult.symptomsTriggered.map((s) => (
-                    <span key={s} className="px-2 py-0.5 rounded bg-red-800 text-white font-semibold text-[11px]">
-                      ⚠️ {s}
-                    </span>
-                  ))}
-                </div>
-                <p className="text-red-100 font-medium pt-1">
-                  {redFlagResult.actionTaken}
-                </p>
-              </div>
-
-              <p className="text-xs text-red-200">
-                You will be flagged for <strong>Immediate Priority Triage</strong>. You do not need to wait in routine queues.
-              </p>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setDismissedEmergency(true)}
-                  className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs shadow-lg"
-                >
-                  Acknowledge & Proceed with Priority Flag
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
-        {/* SUCCESS TOKEN CARD (AFTER SUBMISSION) */}
-        {/* ============================================================ */}
-        {submittedToken ? (
-          <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-emerald-200 p-6 sm:p-8 space-y-6 animate-in zoom-in-95">
-            <div className="text-center space-y-2 pb-4 border-b border-slate-100">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-9 h-9" />
-              </div>
-              <h2 className="text-2xl font-black text-slate-900">
-                {lang === 'hi' ? 'पूर्व-परामर्श चेक-इन पूर्ण हुआ!' : 'Pre-Consultation Recorded Successfully!'}
-              </h2>
-              <p className="text-xs text-slate-500">
-                Integrated with ABDM FHIR Health Gateway & Attending AYUSH Physician Screen
-              </p>
-            </div>
-
-            {/* Token Card */}
-            <div
-              className={`rounded-2xl p-6 text-white shadow-xl relative overflow-hidden ${
-                submittedToken.isRedFlagEmergency
-                  ? 'bg-gradient-to-br from-red-950 via-red-900 to-slate-950 border-2 border-red-500'
-                  : 'bg-gradient-to-br from-teal-900 via-blue-950 to-slate-900'
-              }`}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/15 pb-4">
-                <div>
-                  <span className="text-[11px] uppercase tracking-wider text-teal-300 font-bold">
-                    OPD Queue Token & ABHA Reference
-                  </span>
-                  <div className="text-4xl font-black text-amber-300 tracking-tight mt-0.5">
-                    {submittedToken.tokenNumber}
-                  </div>
-                </div>
-
-                <div className="text-right sm:text-right text-xs">
-                  {submittedToken.isRedFlagEmergency ? (
-                    <span className="inline-block px-3 py-1 bg-red-600 text-white font-black rounded-lg border border-red-400 animate-pulse">
-                      🚨 PRIORITY EMERGENCY TRIAGE
-                    </span>
-                  ) : (
-                    <span className="inline-block px-3 py-1 bg-white/10 rounded-lg text-emerald-300 font-semibold border border-emerald-500/30">
-                      Status: Waiting in OPD Queue
-                    </span>
-                  )}
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 sm:justify-end">
-                    <Clock className="w-3 h-3" />
-                    <span>{new Date(submittedToken.submittedAt).toLocaleTimeString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-4">
-                <div>
-                  <span className="text-slate-400 text-[10px]">Patient Name:</span>
-                  <p className="font-bold text-white mt-0.5">{submittedToken.patientName}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400 text-[10px]">Age / Gender:</span>
-                  <p className="font-bold text-white mt-0.5">{submittedToken.age}y • {submittedToken.gender}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400 text-[10px]">ABHA ID:</span>
-                  <p className="font-mono font-bold text-teal-300 mt-0.5">{submittedToken.abhaId || '91-4829-1029-4821'}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400 text-[10px]">AYUSH Stream:</span>
-                  <p className="font-bold text-amber-300 mt-0.5">{submittedToken.preferredAyushSystem}</p>
-                </div>
-              </div>
-
-              {/* Digitized Documents Count */}
-              {submittedToken.digitizedDocuments && submittedToken.digitizedDocuments.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2 text-xs text-emerald-300">
-                  <FileCheck className="w-4 h-4" />
-                  <span>
-                    {submittedToken.digitizedDocuments.length} Medical Documents Scanned & Timeline Formatted (OCR Complete)
-                  </span>
-                </div>
+              {opt.icon && (
+                <span className="text-3xl leading-none" aria-hidden="true">{opt.icon}</span>
               )}
-            </div>
+              <span className="text-sm font-medium leading-tight">{label}</span>
+              {isSelected && (
+                <span className="absolute top-2 right-2 text-lg" aria-hidden="true">✓</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
-            {/* Actions */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setSubmittedToken(null);
-                  setActiveStep(1);
-                }}
-                className="w-full sm:w-auto px-4 py-2.5 border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>New Patient Check-in</span>
-              </button>
-
-              <Link
-                to="/login"
-                className="w-full sm:w-auto px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-2"
-              >
-                <span>Go to Doctor Portal</span>
-                <ArrowRight className="w-4 h-4 text-amber-300" />
-              </Link>
-            </div>
-          </div>
-        ) : (
-          /* ============================================================ */
-          /* 4-STEP WIZARD FORM */
-          /* ============================================================ */
-          <form
-            onSubmit={handleSubmit}
-            className={`rounded-3xl shadow-2xl border p-6 sm:p-8 space-y-6 backdrop-blur-md ${
-              highContrast
-                ? 'bg-slate-950 border-yellow-400 text-white'
-                : 'bg-white/95 border-slate-200 text-slate-900'
+  const renderConsentParagraphs = () => {
+    const body = t('consentBody');
+    const sentences = body.split('. ').filter(Boolean);
+    return (
+      <div className="space-y-3">
+        {sentences.map((sentence, idx) => (
+          <div
+            key={idx}
+            className={`p-3 rounded-xl border transition-all ${
+              idx === consentParagraph
+                ? 'border-teal-400 bg-teal-50'
+                : idx < consentParagraph
+                ? 'border-green-200 bg-green-50 opacity-70'
+                : 'border-slate-200 bg-slate-50 opacity-40'
             }`}
           >
-            {error && (
-              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 font-semibold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                <span>{error}</span>
+            <p className="text-slate-700 text-sm leading-relaxed">{sentence}.</p>
+            {idx === consentParagraph && (
+              <button
+                type="button"
+                aria-label="Read this aloud"
+                onClick={() => { speak(sentence); }}
+                className="mt-2 text-teal-600 text-xs font-medium underline focus:outline-none"
+              >
+                🔊 Read aloud
+              </button>
+            )}
+          </div>
+        ))}
+        <div className="flex gap-2 mt-2">
+          {consentParagraph > 0 && (
+            <button type="button" onClick={() => setConsentParagraph(p => p - 1)}
+              className="px-3 py-1 text-xs rounded-lg border border-slate-300 text-slate-600">
+              ← Previous
+            </button>
+          )}
+          {consentParagraph < sentences.length - 1 && (
+            <button type="button" onClick={() => { setConsentParagraph(p => p + 1); speak(sentences[consentParagraph + 1]); }}
+              className="px-3 py-1 text-xs rounded-lg bg-teal-600 text-white">
+              Next → Read more
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSummarySection = (intake: PreConsultationIntake) => {
+    const socrates = intake.socratesHpi;
+    return (
+      <div className="space-y-4 text-sm" aria-live="polite">
+        <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4">
+          <h3 className="font-bold text-teal-800 mb-2">Chief Complaint</h3>
+          <p className="text-slate-700">{intake.chiefComplaints || '—'}</p>
+          {intake.duration && <p className="text-slate-500 mt-1">Duration: {intake.duration}</p>}
+        </div>
+        {socrates && (
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+            <h3 className="font-bold text-blue-800 mb-2">History of Present Illness (SOCRATES)</h3>
+            <dl className="grid grid-cols-2 gap-2">
+              {[
+                ['Site', socrates.site],
+                ['Onset', socrates.onset],
+                ['Character', socrates.character],
+                ['Radiation', socrates.radiation],
+                ['Timing', socrates.timingDuration],
+                ['Severity', `${socrates.severity}/10`],
+                ['Worsened by', socrates.exacerbatingFactors],
+                ['Relieved by', socrates.relievingFactors],
+              ].map(([k, v]) => v ? (
+                <div key={k as string}>
+                  <dt className="text-xs text-blue-600 font-semibold">{k as string}</dt>
+                  <dd className="text-slate-700">{v as string}</dd>
+                </div>
+              ) : null)}
+            </dl>
+            {socrates.associatedSymptoms.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-blue-600 font-semibold">Associated Symptoms</p>
+                <p className="text-slate-700">{socrates.associatedSymptoms.join(', ')}</p>
               </div>
             )}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            ['Past Medical', intake.pastMedicalHistory],
+            ['Allergies', intake.allergies],
+            ['Family History', intake.familyHistory],
+            ['Personal History', intake.previousTreatment],
+          ].map(([k, v]) => (
+            <div key={k as string} className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <p className="text-xs font-semibold text-slate-500">{k as string}</p>
+              <p className="text-slate-700 mt-1">{v || 'Not reported'}</p>
+            </div>
+          ))}
+        </div>
+        {intake.digitizedDocuments && intake.digitizedDocuments.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <h3 className="font-bold text-amber-800 mb-2">📄 Digitized Documents ({intake.digitizedDocuments.length})</h3>
+            {intake.digitizedDocuments.map(doc => (
+              <div key={doc.id} className="mb-3 pb-3 border-b border-amber-100 last:border-0">
+                <p className="font-semibold text-slate-700">{doc.documentType} — {doc.fileName}</p>
+                <p className="text-xs text-slate-500">{doc.doctorOrLabName} · {doc.documentDate}</p>
+                {doc.extractedLabResults.filter(l => l.isAbnormal).map(lr => (
+                  <div key={lr.testName} className="mt-1 flex items-center gap-2 text-xs text-red-700 bg-red-50 px-2 py-1 rounded">
+                    <span>⚠️</span>
+                    <span>{lr.testName}: {lr.value} {lr.unit} (ref: {lr.referenceRange}) — {lr.flagType}</span>
+                  </div>
+                ))}
+                {(doc.potentialDrugInteractions || []).map((di, i) => (
+                  <div key={i} className="mt-1 flex items-center gap-2 text-xs text-orange-700 bg-orange-50 px-2 py-1 rounded">
+                    <span>💊</span><span>{di}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
-            {/* Step Navigation Indicator */}
-            <div className="grid grid-cols-4 gap-2 border-b border-slate-200 pb-4 text-xs font-bold">
-              {[
-                { step: 1, label: '1. Identify & ABHA', icon: QrCode },
-                { step: 2, label: '2. Symptoms & HPI', icon: HeartPulse },
-                { step: 3, label: '3. AYUSH & History', icon: Layers },
-                { step: 4, label: '4. Scan Docs & OCR', icon: Upload },
-              ].map(({ step, label, icon: Icon }) => (
+  // ============================================================
+  // RENDER
+  // ============================================================
+  return (
+    <div
+      className="min-h-screen bg-gradient-to-br from-teal-50 via-white to-blue-50"
+      role="main"
+    >
+      {/* Skip link for screen readers */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[9999] focus:bg-teal-700 focus:text-white focus:px-4 focus:py-2 focus:rounded"
+      >
+        Skip to main content
+      </a>
+
+      {/* Accessibility toolbar */}
+      <AccessibilityToolbar />
+
+      {/* App header */}
+      <header className="bg-white border-b border-teal-100 px-4 py-3 flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl" aria-hidden="true">🏥</span>
+          <div>
+            <p className="font-bold text-teal-800 text-base leading-tight">{t('appName')}</p>
+            <p className="text-xs text-slate-500">{t('tagline')}</p>
+          </div>
+        </div>
+        {kioskStep > 1 && patientProfile && (
+          <div className="ml-auto text-right">
+            <p className="font-semibold text-slate-700 text-sm">{patientProfile.name}</p>
+            <p className="text-xs text-teal-600">{patientProfile.abhaId}</p>
+          </div>
+        )}
+      </header>
+
+      {/* Progress bar */}
+      {kioskStep >= 1 && (
+        <div className="px-4 py-4 bg-white border-b border-slate-100">
+          <AudioProgressBar steps={KIOSK_STEPS} currentStep={kioskStep - 1} />
+        </div>
+      )}
+
+      {/* Main content */}
+      <main id="main-content" className="max-w-2xl mx-auto px-4 py-6 pb-32">
+
+        {/* ====================================================
+            STEP 1 — LANGUAGE SELECTION
+        ==================================================== */}
+        {kioskStep === 1 && !langChosen && (
+          <section aria-labelledby="lang-select-title">
+            <div className="text-center mb-8">
+              <div className="text-5xl mb-4" aria-hidden="true">👋</div>
+              <h1 id="lang-select-title" className="text-2xl font-bold text-slate-800 mb-2">
+                {t('langSelectPrompt')}
+              </h1>
+              {/* Show prompt in all 4 languages */}
+              <div className="flex flex-wrap justify-center gap-2 text-sm text-slate-500 mt-2">
+                <span>Please tap your language</span>
+                <span>·</span>
+                <span>कृपया अपनी भाषा चुनें</span>
+                <span>·</span>
+                <span>மொழி தேர்க</span>
+                <span>·</span>
+                <span>ভাষা বেছে নিন</span>
+              </div>
+            </div>
+
+            <div
+              className="grid grid-cols-2 gap-4"
+              role="radiogroup"
+              aria-label="Language selection"
+            >
+              {(Object.entries(LANG_META) as [SupportedLang, typeof LANG_META[SupportedLang]][]).map(([code, meta]) => (
                 <button
-                  key={step}
+                  key={code}
                   type="button"
-                  onClick={() => setActiveStep(step as any)}
-                  className={`p-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all text-center ${
-                    activeStep === step
-                      ? 'bg-teal-700 text-white shadow-md'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  role="radio"
+                  aria-checked={lang === code}
+                  aria-label={`${meta.label} — ${meta.script}`}
+                  onClick={() => {
+                    setLang(code);
+                    speak(STRINGS[code].langSelectAudio, code);
+                  }}
+                  className={`
+                    flex flex-col items-center gap-3 p-6 rounded-3xl border-3 min-h-[120px]
+                    transition-all duration-200 cursor-pointer
+                    focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-400
+                    active:scale-95
+                    ${lang === code
+                      ? 'border-teal-500 bg-teal-600 text-white shadow-xl'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50'}
+                  `}
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{label}</span>
-                  <span className="sm:hidden">{step}</span>
+                  <span className="text-4xl" aria-hidden="true">{meta.flag}</span>
+                  <span className="text-xl font-bold">{meta.label}</span>
+                  <span className="text-xs opacity-75">{meta.script}</span>
                 </button>
               ))}
             </div>
 
-            {/* ------------------------------------------------------------ */}
-            {/* STEP 1: IDENTIFY & ABHA & CONSENT (MODULE D) */}
-            {/* ------------------------------------------------------------ */}
-            {activeStep === 1 && (
-              <div className="space-y-5 animate-in fade-in">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                    <User className="w-4 h-4 text-teal-700" />
-                    <span>Step 1: Patient Identity & ABHA Authentication (पहचान व ABHA ID)</span>
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      triggerAudioGuidance(
-                        lang === 'hi'
-                          ? 'कृपया अपना ABHA ID, नाम, उम्र, और मोबाइल नंबर दर्ज करें।'
-                          : 'Please enter your ABHA ID, name, age, and contact number.'
-                      )
-                    }
-                    className="text-xs text-teal-700 hover:underline flex items-center gap-1"
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>Listen Instructions</span>
-                  </button>
-                </div>
+            <div className="mt-8 text-center">
+              <button
+                type="button"
+                aria-label={`Continue with ${LANG_META[lang].label}`}
+                onClick={() => {
+                  setLangChosen(true);
+                  speak(t('authSubtitle'));
+                }}
+                className="
+                  w-full max-w-xs py-4 bg-teal-600 hover:bg-teal-700 text-white
+                  rounded-2xl font-bold text-lg shadow-lg
+                  focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300
+                  transition-all active:scale-95
+                "
+              >
+                {t('next')} →
+              </button>
+            </div>
+          </section>
+        )}
 
-                {/* ABHA ID Card Box */}
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50 to-blue-50 border border-teal-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <QrCode className="w-4 h-4 text-teal-700" />
-                      <span className="text-xs font-bold text-teal-900">
-                        Ayushman Bharat Health Account (ABHA ID / ABHA Address)
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-teal-100 text-teal-900 rounded border border-teal-300">
-                      ABDM Linked
-                    </span>
-                  </div>
+        {/* ====================================================
+            STEP 1 — AUTH (after language chosen)
+        ==================================================== */}
+        {kioskStep === 1 && langChosen && !consentStep && (
+          <section aria-labelledby="auth-title">
+            <div className="text-center mb-6">
+              <div className="text-5xl mb-3" aria-hidden="true">🪪</div>
+              <h1 id="auth-title" className="text-2xl font-bold text-slate-800">{t('authTitle')}</h1>
+              <p className="text-slate-500 mt-1">{t('authSubtitle')}</p>
+            </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        ABHA Health ID (14 Digits or ABHA Address)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 91-4829-1029-4821 or name@abdm"
-                        value={abhaId}
-                        onChange={(e) => setAbhaId(e.target.value)}
-                        className="w-full px-3 py-2 text-xs border border-teal-300 rounded-lg font-mono font-bold text-teal-950 bg-white"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={() => setAbhaId('91-4829-1029-4821')}
-                        className="px-3 py-2 text-xs bg-white hover:bg-slate-50 border border-teal-300 text-teal-800 font-semibold rounded-lg shadow-2xs"
-                      >
-                        ✓ Verified ABHA Profile Loaded
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            {/* Auth method selector */}
+            <div
+              className="flex gap-2 mb-6"
+              role="radiogroup"
+              aria-label="Login method"
+            >
+              {([
+                { id: 'abha', icon: '🏥', label: t('abhaLogin') },
+                { id: 'aadhaar', icon: '🪪', label: t('aadhaarLogin') },
+                { id: 'register', icon: '➕', label: t('registerNew') },
+              ] as { id: AuthMethod; icon: string; label: string }[]).map(method => (
+                <button
+                  key={method.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={authMethod === method.id}
+                  aria-label={method.label}
+                  onClick={() => { setAuthMethod(method.id); speak(method.label); }}
+                  className={`
+                    flex-1 flex flex-col items-center gap-2 p-3 rounded-2xl border-2 text-xs font-semibold
+                    transition-all cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-400
+                    ${authMethod === method.id
+                      ? 'border-teal-500 bg-teal-600 text-white'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300'}
+                  `}
+                >
+                  <span className="text-2xl" aria-hidden="true">{method.icon}</span>
+                  <span className="text-center leading-tight">{method.label}</span>
+                </button>
+              ))}
+            </div>
 
-                {/* Demographics Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Patient Full Name (पूरा नाम) <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Rajesh Kumar"
-                      value={patientName}
-                      onChange={(e) => setPatientName(e.target.value)}
-                      className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Age (उम्र) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="e.g. 46"
-                        value={age}
-                        onChange={(e) => setAge(e.target.value)}
-                        className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Gender (लिंग)
-                      </label>
-                      <select
-                        value={gender}
-                        onChange={(e) => setGender(e.target.value as any)}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
-                      >
-                        <option value="Male">Male (पुरुष)</option>
-                        <option value="Female">Female (महिला)</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Mobile Number (मोबाइल नंबर) <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      placeholder="e.g. +91 98765 43210"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      City / Residence (शहर)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. New Delhi, Varanasi"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-600"
-                    />
-                  </div>
-                </div>
-
-                {/* Preferred System */}
-                <div className="space-y-1.5 pt-2">
-                  <label className="block text-xs font-bold text-slate-700">
-                    Preferred AYUSH Discipline (उपचार पद्धति) <span className="text-red-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {AYUSH_SYSTEMS.map((sys) => (
-                      <button
-                        key={sys}
-                        type="button"
-                        onClick={() => setPreferredAyushSystem(sys)}
-                        className={`p-2.5 rounded-xl border text-xs font-bold text-center transition-all ${
-                          preferredAyushSystem === sys
-                            ? 'bg-teal-700 text-white border-teal-800 shadow-md scale-105'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {sys}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* DPDP Act 2023 Consent Checkbox */}
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-2">
-                  <label className="flex items-start gap-2.5 cursor-pointer font-medium">
-                    <input
-                      type="checkbox"
-                      checked={dpdpConsent}
-                      onChange={(e) => setDpdpConsent(e.target.checked)}
-                      className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 mt-0.5"
-                    />
-                    <span>
-                      <strong>Consent under DPDP Act 2023:</strong> I grant explicit, revocable consent to capture my voice/touch health data and share it with the Attending AYUSH Physician and ABDM health record.
-                    </span>
-                  </label>
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!patientName.trim() || !phone.trim()) {
-                        setError('Please enter your full name and mobile number.');
-                        return;
-                      }
-                      setError(null);
-                      setActiveStep(2);
-                      triggerAudioGuidance(
-                        lang === 'hi'
-                          ? 'अब अपनी मुख्य समस्या बताएं या नीचे दिए गए विकल्पों में से चुनें।'
-                          : 'Now speak or tap your main health complaints.'
-                      );
-                    }}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-md"
-                  >
-                    <span>Proceed to Step 2 (Symptoms)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
+            {/* ABHA login */}
+            {authMethod === 'abha' && (
+              <div className="space-y-3">
+                <label htmlFor="abha-input" className="block text-sm font-semibold text-slate-700">
+                  {t('abhaLogin')}
+                </label>
+                <p className="text-xs text-slate-500">{t('abhaHint')}</p>
+                <input
+                  id="abha-input"
+                  type="text"
+                  value={abhaInput}
+                  onChange={e => setAbhaInput(e.target.value)}
+                  placeholder={t('abhaPlaceholder')}
+                  aria-label={t('abhaLogin')}
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-base focus:border-teal-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => startListening(setAbhaInput)}
+                  aria-label="Speak your ABHA ID"
+                  className={`w-full flex items-center justify-center gap-3 py-3 rounded-xl border-2 border-teal-300 text-teal-700 font-semibold ${isListeningVoice ? 'animate-listening' : ''}`}
+                >
+                  <span className="text-2xl" aria-hidden="true">🎤</span>
+                  {isListeningVoice ? t('listeningLabel') : 'Speak your ABHA ID'}
+                </button>
+                <p className="text-xs text-teal-700 bg-teal-50 rounded-xl px-3 py-2">
+                  💡 Try: <code>91-4829-1029-4821</code> or <code>ramesh@abdm</code>
+                </p>
               </div>
             )}
 
-            {/* ------------------------------------------------------------ */}
-            {/* STEP 2: CONVERSE & HPI (SOCRATES FRAMEWORK & MODULE A) */}
-            {/* ------------------------------------------------------------ */}
-            {activeStep === 2 && (
-              <div className="space-y-5 animate-in fade-in">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <HeartPulse className="w-4 h-4 text-teal-700" />
-                      <span>Step 2: Multimodal History Interview (लक्षण व SOCRATES जांच)</span>
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Dual-mode input: Speak in microphone OR tap the quick choices below.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-teal-800 bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200">
-                    <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                    <span>SOCRATES AI Engine</span>
-                  </div>
-                </div>
-
-                {/* Quick Symptom Chips */}
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Quick Touch Choices / अक्सर पूछे जाने वाले लक्षण:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {COMMON_SYMPTOM_TAGS.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() =>
-                          setChiefComplaints((prev) => (prev ? `${prev}, ${tag}` : tag))
-                        }
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-teal-50 hover:text-teal-900 border border-slate-200 text-xs font-medium text-slate-700 transition-colors"
-                      >
-                        + {tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Chief Complaint Textarea with Voice */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-700">
-                      Chief Presenting Complaints (मुख्य समस्या बोलें या लिखें){' '}
-                      <span className="text-red-500">*</span>
-                    </label>
-                    <VoiceDictationButton
-                      targetLabel="Patient Symptoms"
-                      onAppendText={(text) =>
-                        setChiefComplaints((prev) => (prev ? `${prev} ${text}` : text))
-                      }
-                    />
-                  </div>
-                  <textarea
-                    rows={3}
-                    required
-                    placeholder="e.g. I have severe pain in both knees and crackling sounds when walking since 8 months... (माइक दबाकर बोलें)"
-                    value={chiefComplaints}
-                    onChange={(e) => setChiefComplaints(e.target.value)}
-                    className="w-full p-3 text-xs sm:text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-600"
-                  />
-                </div>
-
-                {/* SOCRATES Probing Section */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                      <Sliders className="w-4 h-4 text-teal-700" />
-                      <span>SOCRATES Adaptive Clinical History Probing</span>
-                    </h4>
-                    <span className="text-[10px] text-slate-500 font-semibold">
-                      Probing Pain & Symptom Characteristics
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Site */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        1. Site (कहाँ पर दर्द/समस्या है?)
-                      </label>
-                      <select
-                        value={socrates.site}
-                        onChange={(e) => setSocrates({ ...socrates, site: e.target.value })}
-                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
-                      >
-                        {SITE_TAGS.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Onset */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        2. Onset (शुरुआत कैसे हुई?)
-                      </label>
-                      <select
-                        value={socrates.onset}
-                        onChange={(e) => setSocrates({ ...socrates, onset: e.target.value })}
-                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
-                      >
-                        {ONSET_TAGS.map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Character */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        3. Character (दर्द का प्रकार)
-                      </label>
-                      <select
-                        value={socrates.character}
-                        onChange={(e) => setSocrates({ ...socrates, character: e.target.value })}
-                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
-                      >
-                        {CHARACTER_TAGS.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Radiation */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        4. Radiation (क्या दर्द कहीं फैलता है?)
-                      </label>
-                      <select
-                        value={socrates.radiation}
-                        onChange={(e) => setSocrates({ ...socrates, radiation: e.target.value })}
-                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
-                      >
-                        {RADIATION_TAGS.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Pain Severity Slider (1-10) */}
-                  <div className="space-y-1 pt-2">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-slate-700">5. Severity / Pain Level (1 to 10 Scale):</span>
-                      <span className="text-teal-800 bg-teal-100 px-2 py-0.5 rounded font-black">
-                        Level {socrates.severity} / 10
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      value={socrates.severity}
-                      onChange={(e) =>
-                        setSocrates({ ...socrates, severity: parseInt(e.target.value) })
-                      }
-                      className="w-full accent-teal-600"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-400">
-                      <span>1 (Mild)</span>
-                      <span>5 (Moderate)</span>
-                      <span>10 (Severe / Unbearable)</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-between pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveStep(1)}
-                    className="px-4 py-2 border border-slate-300 text-xs font-semibold rounded-xl"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!chiefComplaints.trim()) {
-                        setError('Please describe your chief complaints.');
-                        return;
-                      }
-                      setError(null);
-                      setActiveStep(3);
-                    }}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-md"
-                  >
-                    <span>Proceed to Step 3 (AYUSH History)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
+            {/* Aadhaar login */}
+            {authMethod === 'aadhaar' && (
+              <div className="space-y-3">
+                <label htmlFor="aadhaar-input" className="block text-sm font-semibold text-slate-700">
+                  {t('aadhaarLogin')}
+                </label>
+                <input
+                  id="aadhaar-input"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={12}
+                  value={aadhaarInput}
+                  onChange={e => setAadhaarInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder={t('aadhaarPlaceholder')}
+                  aria-label={t('aadhaarLogin')}
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-base tracking-widest focus:border-teal-500 focus:outline-none"
+                />
+                <p className="text-xs text-teal-700 bg-teal-50 rounded-xl px-3 py-2">
+                  💡 Try: <code>234567890123</code>
+                </p>
               </div>
             )}
 
-            {/* ------------------------------------------------------------ */}
-            {/* STEP 3: AYUSH DASHAVIDHA & LIFESTYLE HISTORY (MODULE A) */}
-            {/* ------------------------------------------------------------ */}
-            {activeStep === 3 && (
-              <div className="space-y-5 animate-in fade-in">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-teal-700" />
-                    <span>Step 3: AYUSH History Mode & Dashavidha Intake (दशविध व जीवनशैली)</span>
-                  </h3>
-                  <span className="text-xs text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded font-semibold border border-amber-200">
-                    Ayurvedic OPD Mode
-                  </span>
-                </div>
-
-                {/* Dashavidha & Ahara-Vihara Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Prakriti Self-Perception (शारीरिक प्रकृति)
-                    </label>
-                    <select
-                      value={prakritiSelf}
-                      onChange={(e) => setPrakritiSelf(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
-                    >
-                      <option value="Vata-Pitta (Dry skin, active mind, light sleep)">Vata-Pitta (Dry skin, active mind, light sleep)</option>
-                      <option value="Pitta-Kapha (Heat sensitive, strong appetite, calm)">Pitta-Kapha (Heat sensitive, strong appetite, calm)</option>
-                      <option value="Kapha dominant (Heaviness, slow digestion, deep sleep)">Kapha dominant (Heaviness, slow digestion, deep sleep)</option>
-                      <option value="Not sure / Balanced">Not sure / Balanced</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Ahara Pattern (आहार / खानपान की आदतें)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Spicy/oily food, irregular meal timings, tea 3x"
-                      value={aharaHabit}
-                      onChange={(e) => setAharaHabit(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Vihara Routine (विहार / दिनचर्या व तनाव)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Desk job, sedentary, late night sleep"
-                      value={viharaHabit}
-                      onChange={(e) => setViharaHabit(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Known Drug / Herb Allergies (एलर्जी)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Dust, Penicillin, None"
-                      value={allergies}
-                      onChange={(e) => setAllergies(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
+            {/* Register new */}
+            {authMethod === 'register' && (
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Previous Medications / Treatments Taken (पहले ली दवाइयां)
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="e.g. Took Painkillers and Ayurvedic oil massage for 2 weeks with temporary relief..."
-                    value={priorTreatments}
-                    onChange={(e) => setPriorTreatments(e.target.value)}
-                    className="w-full p-2.5 text-xs border border-slate-300 rounded-lg"
-                  />
+                  <label htmlFor="reg-name" className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
+                  <input id="reg-name" type="text" value={regName} onChange={e => setRegName(e.target.value)}
+                    placeholder="Your full name" aria-label="Full name"
+                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-base focus:border-teal-500 focus:outline-none" />
                 </div>
-
-                <div className="flex justify-between pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveStep(2)}
-                    className="px-4 py-2 border border-slate-300 text-xs font-semibold rounded-xl"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveStep(4);
-                      triggerAudioGuidance(
-                        lang === 'hi'
-                          ? 'अब आप अपने पुराने मेडिकल पर्चे या लैब रिपोर्ट स्कैन कर सकते हैं।'
-                          : 'Now upload or scan your prior prescriptions and lab reports.'
-                      );
-                    }}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-md"
-                  >
-                    <span>Proceed to Step 4 (Document AI)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="reg-age" className="block text-sm font-semibold text-slate-700 mb-1">Age</label>
+                    <input id="reg-age" type="number" value={regAge} onChange={e => setRegAge(e.target.value)}
+                      placeholder="e.g. 45" aria-label="Age"
+                      className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-base focus:border-teal-500 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label htmlFor="reg-phone" className="block text-sm font-semibold text-slate-700 mb-1">Phone</label>
+                    <input id="reg-phone" type="tel" value={regPhone} onChange={e => setRegPhone(e.target.value)}
+                      placeholder="10-digit number" aria-label="Phone number"
+                      className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-base focus:border-teal-500 focus:outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <p className="block text-sm font-semibold text-slate-700 mb-2">{t('genderLabel')}</p>
+                  <div className="flex gap-3" role="radiogroup" aria-label="Gender">
+                    {(['Male', 'Female', 'Other'] as const).map(g => (
+                      <button key={g} type="button" role="radio" aria-checked={regGender === g}
+                        onClick={() => setRegGender(g)} aria-label={g}
+                        className={`flex-1 py-3 rounded-xl border-2 font-semibold text-sm transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-400 ${regGender === g ? 'border-teal-500 bg-teal-600 text-white' : 'border-slate-200 bg-white text-slate-600'}`}>
+                        {g === 'Male' ? '👨 ' + t('genderMale') : g === 'Female' ? '👩 ' + t('genderFemale') : '🧑 ' + t('genderOther')}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* ------------------------------------------------------------ */}
-            {/* STEP 4: MEDICAL DOCUMENT DIGITIZATION & OCR (MODULE B) */}
-            {/* ------------------------------------------------------------ */}
-            {activeStep === 4 && (
-              <div className="space-y-5 animate-in fade-in">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <Upload className="w-4 h-4 text-teal-700" />
-                      <span>Step 4: Medical Document Digitization & OCR Intelligence (Module B)</span>
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Upload physical prescriptions, lab reports, or discharge summaries for automated entity extraction.
-                    </p>
+            {/* Error */}
+            {authError && (
+              <div role="alert" aria-live="assertive" className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-red-700 text-sm">
+                <span aria-hidden="true">⚠️</span>
+                <span>{authError}</span>
+              </div>
+            )}
+
+            {/* Submit */}
+            <button
+              type="button"
+              onClick={handleAuth}
+              disabled={authLoading}
+              aria-label={authLoading ? t('processingLabel') : t('loginBtn')}
+              className="mt-6 w-full py-4 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white rounded-2xl font-bold text-lg shadow-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
+            >
+              {authLoading ? (
+                <span className="flex items-center justify-center gap-3">
+                  <span className="animate-spin text-xl" aria-hidden="true">⏳</span>
+                  {t('processingLabel')}
+                </span>
+              ) : (
+                <>{t('loginBtn')} →</>
+              )}
+            </button>
+
+            {/* Doctor login link */}
+            <div className="mt-6 text-center">
+              <Link to="/login" className="text-sm text-teal-700 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 rounded">
+                Doctor / Staff Login →
+              </Link>
+            </div>
+          </section>
+        )}
+
+        {/* ====================================================
+            STEP 1 — CONSENT
+        ==================================================== */}
+        {kioskStep === 1 && langChosen && consentStep && !consentGranted && (
+          <section aria-labelledby="consent-title">
+            <div className="text-center mb-6">
+              <div className="text-5xl mb-3" aria-hidden="true">🔒</div>
+              <h1 id="consent-title" className="text-2xl font-bold text-slate-800">{t('consentTitle')}</h1>
+              <p className="text-slate-500 text-sm mt-1">
+                {t('consentVerbalPrompt')}
+              </p>
+            </div>
+
+            {/* Paragraph-by-paragraph consent with audio */}
+            {renderConsentParagraphs()}
+
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                aria-label={t('consentDisagree')}
+                onClick={() => {
+                  speak(t('consentDisagree'));
+                  setConsentStep(false);
+                }}
+                className="py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold text-lg border-2 border-slate-200 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-400 transition-all"
+              >
+                ❌ {t('consentDisagree')}
+              </button>
+              <button
+                type="button"
+                aria-label={t('consentAgree')}
+                onClick={handleConsentGrant}
+                className="py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-bold text-lg shadow-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-green-300 transition-all active:scale-95"
+              >
+                ✅ {t('consentAgree')}
+              </button>
+            </div>
+
+            {/* Verbal consent button */}
+            <button
+              type="button"
+              onClick={listenForConsent}
+              aria-label='Say "yes" to agree'
+              className={`mt-4 w-full flex items-center justify-center gap-3 py-3 rounded-xl border-2 border-teal-300 text-teal-700 font-semibold text-base ${isListeningVoice ? 'animate-listening' : ''}`}
+            >
+              <span className="text-2xl" aria-hidden="true">🎤</span>
+              {isListeningVoice ? t('listeningLabel') : `Say "${t('yes')}" to agree verbally`}
+            </button>
+
+            {/* AYUSH system selection (on same consent screen after agreement intent) */}
+            <div className="mt-8">
+              <p className="text-sm font-semibold text-slate-700 mb-3">{t('selectAyushSystem')}</p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label={t('selectAyushSystem')}>
+                {AYUSH_SYSTEMS.map(system => (
+                  <button
+                    key={system}
+                    type="button"
+                    role="radio"
+                    aria-checked={preferredSystem === system}
+                    aria-label={system}
+                    onClick={() => { setPreferredSystem(system); speak(system); }}
+                    className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 min-h-[80px] text-sm font-semibold transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-400 active:scale-95 ${preferredSystem === system ? 'border-teal-500 bg-teal-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300'}`}
+                  >
+                    <span className="text-3xl" aria-hidden="true">{AYUSH_ICONS[system]}</span>
+                    <span className="text-center leading-tight">{system}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ====================================================
+            STEP 2 — ADAPTIVE QUESTIONING
+        ==================================================== */}
+        {kioskStep === 2 && currentQuestion && (
+          <section aria-labelledby="question-title">
+            {/* Question counter */}
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs text-slate-500 font-medium">
+                Question {questionIdx + 1} of {activeQuestions.length}
+              </span>
+              <div className="flex items-center gap-1">
+                {activeQuestions.map((_, i) => (
+                  <div key={i} className={`w-2 h-2 rounded-full ${i < questionIdx ? 'bg-teal-500' : i === questionIdx ? 'bg-teal-700' : 'bg-slate-200'}`} aria-hidden="true" />
+                ))}
+              </div>
+            </div>
+
+            {/* Phase label */}
+            <div className="mb-2">
+              <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
+                currentQuestion.phase === 'chief_complaint' ? 'bg-amber-100 text-amber-700' :
+                currentQuestion.phase === 'socrates' ? 'bg-blue-100 text-blue-700' :
+                currentQuestion.phase === 'past_history' ? 'bg-purple-100 text-purple-700' :
+                'bg-green-100 text-green-700'
+              }`}>
+                {currentQuestion.phase.replace('_', ' ')}
+              </span>
+            </div>
+
+            {/* Question */}
+            <h2 id="question-title" className="text-2xl font-bold text-slate-800 mb-2 leading-snug">
+              {t(currentQuestion.labelKey)}
+            </h2>
+
+            {/* Read aloud button */}
+            <button
+              type="button"
+              aria-label="Read question aloud"
+              onClick={() => speak(t(currentQuestion.audioKey))}
+              className="mb-5 flex items-center gap-2 text-teal-600 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 rounded"
+            >
+              <span aria-hidden="true">🔊</span> {t('repeat')}
+            </button>
+
+            {/* Single select */}
+            {currentQuestion.type === 'single_select' && currentQuestion.options && (
+              renderOptionGrid(
+                currentQuestion,
+                answers.site ? [
+                  currentQuestion.socratesKey === 'site' ? (answers.site || '') :
+                  currentQuestion.socratesKey === 'onset' ? (answers.onset || '') :
+                  currentQuestion.socratesKey === 'character' ? (answers.character || '') :
+                  currentQuestion.socratesKey === 'radiation' ? (answers.radiation || '') :
+                  currentQuestion.socratesKey === 'timingDuration' ? (answers.timing || '') :
+                  currentQuestion.id === 'duration' ? (answers.duration || '') :
+                  currentQuestion.id === 'prakriti' ? (answers.prakriti || '') :
+                  currentQuestion.id === 'ahara_shakti' ? (answers.aharaShakti || '') : ''
+                ].filter(Boolean) : [],
+                (id) => handleSingleSelect(id, currentQuestion),
+              )
+            )}
+
+            {/* Multi select */}
+            {currentQuestion.type === 'multi_select' && currentQuestion.options && (
+              <>
+                {renderOptionGrid(
+                  currentQuestion,
+                  currentQuestion.id === 'chief_complaint' ? (answers.chiefComplaintTags || []) :
+                  currentQuestion.socratesKey === 'associatedSymptoms' ? (answers.associatedSymptoms || []) :
+                  (answers.ros || []),
+                  (id) => handleMultiSelect(id, currentQuestion),
+                )}
+                <button
+                  type="button"
+                  onClick={() => advanceQuestion(answers)}
+                  className="mt-4 w-full py-4 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-bold text-base shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
+                >
+                  {t('next')} →
+                </button>
+              </>
+            )}
+
+            {/* Yes/No */}
+            {currentQuestion.type === 'yes_no' && (
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={yesNoAnswer === true}
+                  aria-label={t('yes')}
+                  onClick={() => {
+                    setYesNoAnswer(true);
+                    handleFreeText('Yes', currentQuestion);
+                    setTimeout(() => advanceQuestion({ ...answers }), 300);
+                  }}
+                  className={`flex-1 py-6 text-2xl font-bold rounded-2xl border-3 flex flex-col items-center gap-2 transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-green-400 active:scale-95 ${yesNoAnswer === true ? 'bg-green-600 border-green-600 text-white' : 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100'}`}
+                >
+                  <span aria-hidden="true">✅</span>
+                  {t('yes')}
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={yesNoAnswer === false}
+                  aria-label={t('no')}
+                  onClick={() => {
+                    setYesNoAnswer(false);
+                    handleFreeText('No', currentQuestion);
+                    setTimeout(() => advanceQuestion({ ...answers }), 300);
+                  }}
+                  className={`flex-1 py-6 text-2xl font-bold rounded-2xl border-3 flex flex-col items-center gap-2 transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-red-400 active:scale-95 ${yesNoAnswer === false ? 'bg-red-600 border-red-600 text-white' : 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'}`}
+                >
+                  <span aria-hidden="true">❌</span>
+                  {t('no')}
+                </button>
+              </div>
+            )}
+
+            {/* Slider (severity) */}
+            {currentQuestion.type === 'slider' && (
+              <div className="space-y-6">
+                <div className="text-center">
+                  <div
+                    className={`text-6xl font-black transition-all ${sliderValue <= 3 ? 'text-green-500' : sliderValue <= 6 ? 'text-amber-500' : 'text-red-600'}`}
+                    aria-live="polite"
+                    aria-label={`Severity: ${sliderValue} out of 10`}
+                  >
+                    {sliderValue}
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-200">
-                    High-Accuracy OCR
-                  </span>
+                  <div className="text-sm text-slate-500 mt-1">
+                    {sliderValue <= 2 ? '😊 Very mild' : sliderValue <= 4 ? '😐 Mild' : sliderValue <= 6 ? '😣 Moderate' : sliderValue <= 8 ? '😰 Severe' : '😱 Very severe'}
+                  </div>
                 </div>
-
-                {/* Upload Box */}
-                <div className="p-6 rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/50 text-center space-y-3">
-                  <Upload className="w-8 h-8 text-teal-700 mx-auto" />
-                  <div>
-                    <p className="text-xs font-bold text-teal-950">
-                      Upload Medical Prescriptions / Lab Reports / Discharge Summaries
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Supports PDF, PNG, JPG files (Handwritten & Printed Multilingual OCR)
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-3">
-                    <label className="cursor-pointer px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-md inline-flex items-center gap-2">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>{isProcessingDoc ? 'Extracting Entities...' : 'Choose File to Scan'}</span>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                {/* Digitized Documents Timeline & Extraction Cards */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-teal-700" />
-                    <span>Digitized Document Intelligence Timeline ({uploadedDocs.length} Extracted)</span>
-                  </h4>
-
-                  {uploadedDocs.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 shadow-2xs"
+                <input
+                  type="range"
+                  min={currentQuestion.min ?? 1}
+                  max={currentQuestion.max ?? 10}
+                  step={currentQuestion.step ?? 1}
+                  value={sliderValue}
+                  onChange={e => { setSliderValue(Number(e.target.value)); speak(`${e.target.value} out of 10`); }}
+                  aria-label={t(currentQuestion.labelKey)}
+                  className="w-full h-3 rounded-full accent-teal-600 cursor-pointer"
+                />
+                {/* Large tap targets for exact numbers */}
+                <div className="flex justify-between gap-1" role="group" aria-label="Pain scale tap buttons">
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      aria-label={`${n} out of 10`}
+                      aria-pressed={sliderValue === n}
+                      onClick={() => { setSliderValue(n); speak(`${n} out of 10`); }}
+                      className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${sliderValue === n ? 'bg-teal-600 border-teal-600 text-white' : n <= 3 ? 'bg-green-50 border-green-200 text-green-700' : n <= 6 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-red-50 border-red-200 text-red-700'}`}
                     >
-                      <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200/80 pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-teal-100 text-teal-900 border border-teal-300">
-                            {doc.documentType}
-                          </span>
-                          <span className="text-xs font-bold text-slate-800">{doc.fileName}</span>
-                        </div>
-                        <span className="text-[11px] text-slate-400 font-medium">
-                          Date: {doc.documentDate} • {doc.doctorOrLabName}
-                        </span>
-                      </div>
-
-                      {/* Extracted Diagnoses */}
-                      {doc.extractedDiagnoses.length > 0 && (
-                        <div className="text-xs">
-                          <span className="font-bold text-slate-700">Extracted Diagnoses: </span>
-                          <span className="text-teal-900 font-semibold">
-                            {doc.extractedDiagnoses.join(', ')}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Extracted Medications */}
-                      {doc.extractedMedications.length > 0 && (
-                        <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-slate-700 block">
-                            Extracted Medications & Dosages:
-                          </span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {doc.extractedMedications.map((m, idx) => (
-                              <div
-                                key={idx}
-                                className="p-2 bg-white rounded-lg border border-slate-200 text-[11px]"
-                              >
-                                <span className="font-bold text-slate-900">{m.medicineName}</span>{' '}
-                                <span className="text-teal-700 font-semibold">({m.dosage})</span> -{' '}
-                                <span className="text-slate-500">{m.frequency}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Extracted Lab Results with Abnormal Highlighting */}
-                      {doc.extractedLabResults.length > 0 && (
-                        <div className="space-y-1.5 pt-1">
-                          <span className="text-[11px] font-bold text-slate-700 block">
-                            Investigation Results (Abnormal Flags Highlighted):
-                          </span>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            {doc.extractedLabResults.map((lab, idx) => (
-                              <div
-                                key={idx}
-                                className={`p-2 rounded-lg border text-[11px] ${
-                                  lab.isAbnormal
-                                    ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold'
-                                    : 'bg-white border-slate-200 text-slate-800'
-                                }`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="truncate">{lab.testName}:</span>
-                                  {lab.isAbnormal && (
-                                    <span className="text-[9px] bg-amber-500 text-white px-1 rounded uppercase">
-                                      High
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-sm font-black mt-0.5">
-                                  {lab.value} <span className="text-[10px] font-normal">{lab.unit}</span>
-                                </div>
-                                <div className="text-[9px] text-slate-400">Ref: {lab.referenceRange}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Drug Interaction Alerts */}
-                      {doc.potentialDrugInteractions && doc.potentialDrugInteractions.length > 0 && (
-                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                          <span>{doc.potentialDrugInteractions[0]}</span>
-                        </div>
-                      )}
-                    </div>
+                      {n}
+                    </button>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newAnswers = { ...answers, severity: sliderValue };
+                    setAnswers(newAnswers);
+                    playTone('done');
+                    advanceQuestion(newAnswers);
+                  }}
+                  className="w-full py-4 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-bold text-lg shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
+                >
+                  {t('next')} →
+                </button>
+              </div>
+            )}
 
-                {/* Final Submit Buttons */}
-                <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+            {/* Free voice / text */}
+            {(currentQuestion.type === 'free_voice' || currentQuestion.type === 'voice_text') && (
+              <div className="space-y-3">
+                {/* Voice input */}
+                <button
+                  type="button"
+                  aria-label={isListeningVoice ? t('listeningLabel') : 'Tap to speak your answer'}
+                  onClick={() => startListening((text) => {
+                    setCurrentFreeText(text);
+                    handleFreeText(text, currentQuestion);
+                    speak(`I heard: ${text}`);
+                  })}
+                  className={`
+                    w-full flex flex-col items-center gap-2 py-6 rounded-2xl border-3
+                    font-bold text-lg transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300
+                    ${isListeningVoice
+                      ? 'border-teal-500 bg-teal-600 text-white animate-listening'
+                      : 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100'}
+                  `}
+                >
+                  <span className="text-5xl" aria-hidden="true">{isListeningVoice ? '🔴' : '🎤'}</span>
+                  <span>{isListeningVoice ? t('listeningLabel') : 'Tap to Speak'}</span>
+                  {currentFreeText && !isListeningVoice && (
+                    <span className="text-sm font-normal text-teal-900 bg-teal-100 px-3 py-1 rounded-xl mt-1">
+                      "{currentFreeText}"
+                    </span>
+                  )}
+                </button>
+
+                {/* Text fallback */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={currentFreeText}
+                    onChange={e => {
+                      setCurrentFreeText(e.target.value);
+                      handleFreeText(e.target.value, currentQuestion);
+                    }}
+                    placeholder={currentQuestion.placeholder || 'Or type here…'}
+                    aria-label={`Type your answer: ${t(currentQuestion.labelKey)}`}
+                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-base focus:border-teal-500 focus:outline-none pr-12"
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  {!currentQuestion.required && (
+                    <button
+                      type="button"
+                      onClick={() => advanceQuestion(answers)}
+                      aria-label={t('skip')}
+                      className="flex-1 py-3 border-2 border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 transition-all"
+                    >
+                      {t('skip')} →
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setActiveStep(3)}
-                    className="w-full sm:w-auto px-4 py-2 border border-slate-300 text-xs font-semibold rounded-xl"
+                    onClick={() => advanceQuestion(answers)}
+                    className="flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
                   >
-                    Back to AYUSH History
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="w-full sm:w-auto py-3 px-8 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-sm font-bold shadow-lg shadow-teal-950/20 transition-all flex items-center justify-center gap-2 hover:scale-105 active:scale-95"
-                  >
-                    <Stethoscope className="w-4 h-4 text-amber-300" />
-                    <span>Submit & Generate OPD Token / टोकन प्राप्त करें</span>
+                    {t('next')} →
                   </button>
                 </div>
               </div>
             )}
-          </form>
+
+            {/* Emergency modal */}
+            {emergencyDetected && !emergencyDismissed && redFlagResult?.isEmergency && (
+              <div
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="rf-title"
+                aria-describedby="rf-desc"
+                className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
+              >
+                <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center border-4 border-red-500">
+                  <div className="text-7xl mb-4 animate-bounce" aria-hidden="true">🚨</div>
+                  <h2 id="rf-title" className="text-2xl font-black text-red-700 mb-3">{t('redFlagTitle')}</h2>
+                  <p id="rf-desc" className="text-slate-700 leading-relaxed mb-2">{t('redFlagBody')}</p>
+                  <p className="text-red-700 font-semibold mb-2 text-sm">{redFlagResult.actionTaken}</p>
+                  <div className="flex flex-wrap justify-center gap-2 mb-4">
+                    {redFlagResult.symptomsTriggered.map(s => (
+                      <span key={s} className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">{s}</span>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={t('redFlagAction')}
+                    onClick={() => setEmergencyDismissed(true)}
+                    className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black text-xl focus:outline-none focus-visible:ring-4 focus-visible:ring-red-300 transition-all"
+                  >
+                    {t('redFlagAction')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmergencyDismissed(true)}
+                    className="mt-3 w-full py-3 text-slate-600 border border-slate-200 rounded-xl font-semibold focus:outline-none"
+                  >
+                    I understand — continue
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
         )}
-      </div>
+
+        {/* ====================================================
+            STEP 3 — DOCUMENT SCAN
+        ==================================================== */}
+        {kioskStep === 3 && (
+          <section aria-labelledby="scan-title">
+            <div className="text-center mb-6">
+              <div className="text-5xl mb-3" aria-hidden="true">📄</div>
+              <h1 id="scan-title" className="text-2xl font-bold text-slate-800">{t('scanTitle')}</h1>
+              <p className="text-slate-500 mt-1 text-sm leading-relaxed">{t('scanInstruction')}</p>
+            </div>
+
+            {/* Audio instruction */}
+            <button
+              type="button"
+              onClick={() => speak(t('scanAudioGuide'))}
+              aria-label="Hear scanning instructions"
+              className="w-full flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-2xl text-blue-700 font-medium mb-5 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400"
+            >
+              <span className="text-3xl" aria-hidden="true">🔊</span>
+              <span className="text-left text-sm">Tap to hear scanning instructions aloud</span>
+            </button>
+
+            {/* Upload area */}
+            <label
+              htmlFor="doc-upload"
+              aria-label="Upload or take photo of medical document"
+              className="
+                block w-full border-3 border-dashed border-teal-300 rounded-3xl
+                p-8 text-center cursor-pointer hover:bg-teal-50 transition-all
+                focus-within:ring-4 focus-within:ring-teal-400
+              "
+            >
+              <span className="text-5xl" aria-hidden="true">📸</span>
+              <p className="mt-3 text-teal-700 font-bold text-lg">Upload or Take Photo</p>
+              <p className="text-slate-500 text-sm mt-1">Lab report · Prescription · Discharge summary</p>
+              <input
+                id="doc-upload"
+                type="file"
+                multiple
+                accept="image/*,.pdf"
+                capture="environment"
+                onChange={handleFileUpload}
+                className="sr-only"
+                aria-label="Select medical document files"
+              />
+            </label>
+
+            {scanLoading && (
+              <div role="status" aria-live="polite" className="mt-4 flex items-center gap-3 text-teal-700 font-semibold">
+                <span className="animate-spin text-2xl" aria-hidden="true">⏳</span>
+                {t('processingLabel')} — Reading your document…
+              </div>
+            )}
+
+            {/* Sample docs button */}
+            {documents.length === 0 && (
+              <button
+                type="button"
+                onClick={handleUseSampleDocs}
+                className="mt-4 w-full py-3 border-2 border-amber-300 bg-amber-50 text-amber-700 rounded-2xl font-semibold hover:bg-amber-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-400 transition-all"
+              >
+                📋 Load Sample Medical Records (Demo)
+              </button>
+            )}
+
+            {/* Scanned documents timeline */}
+            {documents.length > 0 && (
+              <div className="mt-6 space-y-4" aria-label="Scanned documents" aria-live="polite">
+                <h2 className="font-bold text-slate-700 flex items-center gap-2">
+                  <span aria-hidden="true">📑</span>
+                  {documents.length} Document{documents.length > 1 ? 's' : ''} Scanned
+                </h2>
+                {documents.sort((a, b) => a.documentDate.localeCompare(b.documentDate)).map(doc => (
+                  <div key={doc.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-bold text-slate-800">{doc.documentType}</p>
+                        <p className="text-sm text-slate-500">{doc.doctorOrLabName}</p>
+                        <p className="text-xs text-slate-400">{doc.documentDate}</p>
+                      </div>
+                      <span className="text-2xl" aria-hidden="true">
+                        {doc.documentType === 'Lab Report' ? '🔬' : doc.documentType === 'Prescription' ? '💊' : '📋'}
+                      </span>
+                    </div>
+                    {doc.extractedLabResults.filter(l => l.isAbnormal).length > 0 && (
+                      <div className="mt-3 space-y-1" role="list" aria-label="Abnormal results">
+                        {doc.extractedLabResults.filter(l => l.isAbnormal).map(lr => (
+                          <div
+                            key={lr.testName}
+                            role="listitem"
+                            className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg"
+                          >
+                            <span aria-label="Abnormal" aria-hidden="true">⚠️</span>
+                            <span><strong>{lr.testName}</strong>: {lr.value} {lr.unit} (ref: {lr.referenceRange}) — <em>{lr.flagType}</em></span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(doc.potentialDrugInteractions || []).length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {(doc.potentialDrugInteractions || []).map((di, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs text-orange-700 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg">
+                            <span aria-label="Drug interaction alert" aria-hidden="true">💊</span>
+                            <span>{di}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => { speak(t('skip')); goToStep(4); }}
+                aria-label={t('skipScan')}
+                className="flex-1 py-4 border-2 border-slate-200 rounded-2xl text-slate-600 font-semibold hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 transition-all"
+              >
+                {documents.length > 0 ? t('next') : t('skipScan')} →
+              </button>
+              {documents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { speak('Moving to summary'); goToStep(4); }}
+                  className="flex-1 py-4 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-bold shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
+                >
+                  Continue → Summary
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* ====================================================
+            STEP 4 — SUMMARY & HIS PUSH
+        ==================================================== */}
+        {kioskStep === 4 && (
+          <section aria-labelledby="summary-title">
+            <div className="text-center mb-6">
+              <div className="text-5xl mb-3" aria-hidden="true">📋</div>
+              <h1 id="summary-title" className="text-2xl font-bold text-slate-800">{t('summaryTitle')}</h1>
+              <p className="text-slate-500 text-sm mt-1">{t('summaryAudioConfirm')}</p>
+              <button
+                type="button"
+                onClick={() => speak(t('summaryAudioConfirm'))}
+                aria-label="Hear summary aloud"
+                className="mt-2 text-teal-600 text-sm font-medium underline focus:outline-none"
+              >
+                🔊 Read summary aloud
+              </button>
+            </div>
+
+            {/* AI note */}
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-5 flex items-start gap-3">
+              <span className="text-2xl" aria-hidden="true">🤖</span>
+              <p className="text-amber-800 text-sm font-medium">
+                {t('aiPopulatedNote')} Your doctor will review and confirm all details.
+              </p>
+            </div>
+
+            {/* Summary content */}
+            {renderSummarySection(buildIntake())}
+
+            {/* FHIR / HIS actions */}
+            <div className="mt-6 space-y-3">
+              {!hisPushed ? (
+                <button
+                  type="button"
+                  onClick={handlePushToHis}
+                  disabled={summaryLoading}
+                  aria-label={summaryLoading ? t('processingLabel') : t('pushToHisBtn')}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-2xl font-bold shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-300 transition-all active:scale-95"
+                >
+                  {summaryLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="animate-spin" aria-hidden="true">⏳</span> {t('processingLabel')}
+                    </span>
+                  ) : (
+                    <>🏥 {t('pushToHisBtn')}</>
+                  )}
+                </button>
+              ) : (
+                <div role="status" aria-live="polite" className="p-4 bg-green-50 border border-green-200 rounded-2xl flex items-start gap-3">
+                  <span className="text-2xl" aria-hidden="true">✅</span>
+                  <div>
+                    <p className="font-bold text-green-700">{t('pushSuccess')}</p>
+                    {hisPushResult && (
+                      <p className="text-green-600 text-xs mt-1">Reference: {hisPushResult.referenceId}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {fhirBundle && (
+                <button
+                  type="button"
+                  onClick={() => setShowFhirModal(true)}
+                  aria-label="View FHIR health record bundle"
+                  className="w-full py-3 border-2 border-blue-300 text-blue-700 rounded-2xl font-semibold hover:bg-blue-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-300 transition-all"
+                >
+                  🔍 {t('fhirViewBtn')}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleFinalSubmit}
+                className="w-full py-5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-black text-xl shadow-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
+              >
+                ✅ {t('confirm')} & Get Token
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* ====================================================
+            STEP 5 — TOKEN / DONE
+        ==================================================== */}
+        {kioskStep === 5 && submittedIntake && (
+          <section aria-labelledby="token-title" className="text-center py-4">
+            <div className="text-7xl mb-4" aria-hidden="true">🎉</div>
+            <h1 id="token-title" className="text-3xl font-black text-teal-800 mb-2">{t('tokenTitle')}</h1>
+
+            {/* Big token */}
+            <div
+              className="my-6 p-8 bg-teal-600 text-white rounded-3xl shadow-xl"
+              aria-label={`Your token number is ${tokenNumber}`}
+            >
+              <p className="text-sm font-semibold opacity-80 mb-2">Your OPD Token</p>
+              <p className="text-5xl font-black tracking-widest">{tokenNumber}</p>
+              <p className="text-sm opacity-80 mt-3">{submittedIntake.preferredAyushSystem} OPD</p>
+            </div>
+
+            <p className="text-slate-600 text-lg leading-relaxed">{t('waitMessage')}</p>
+
+            {submittedIntake.isRedFlagEmergency && (
+              <div role="alert" aria-live="assertive" className="mt-4 p-4 bg-red-50 border-2 border-red-400 rounded-2xl flex items-start gap-3">
+                <span className="text-3xl" aria-hidden="true">🚨</span>
+                <div className="text-left">
+                  <p className="font-bold text-red-700">Priority Triage Patient</p>
+                  <p className="text-red-600 text-sm">You have been marked as Priority. Please alert a staff member immediately.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Audio confirmation button */}
+            <button
+              type="button"
+              onClick={() => speak(t('tokenAudio').replace('{token}', tokenNumber))}
+              aria-label="Hear your token number again"
+              className="mt-6 w-full py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-bold text-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300 transition-all"
+            >
+              🔊 Hear my token number again
+            </button>
+
+            <Link
+              to="/login"
+              className="mt-4 block py-3 border-2 border-slate-200 rounded-2xl text-slate-600 font-semibold hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 transition-all"
+            >
+              {t('returnToDashboard')}
+            </Link>
+          </section>
+        )}
+      </main>
+
+      {/* Persistent Repeat/Back/Help cluster */}
+      <RepeatBackButton
+        onBack={handleBack}
+        showBack={kioskStep > 1 || (kioskStep === 2 && questionIdx > 0)}
+        repeatText={(() => {
+          if (kioskStep === 1 && !langChosen) return t('langSelectAudio');
+          if (kioskStep === 2 && currentQuestion) return t(currentQuestion.audioKey);
+          if (kioskStep === 3) return t('scanAudioGuide');
+          if (kioskStep === 4) return t('summaryAudioConfirm');
+          return '';
+        })()}
+      />
+
+      {/* FHIR modal */}
+      {showFhirModal && fhirBundle && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fhir-title"
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 id="fhir-title" className="font-bold text-slate-800">FHIR R4 Bundle (Mocked)</h2>
+              <button type="button" onClick={() => setShowFhirModal(false)} aria-label="Close FHIR viewer" className="text-2xl text-slate-500 hover:text-slate-800 focus:outline-none">✕</button>
+            </div>
+            <pre className="overflow-auto p-4 text-xs text-slate-700 font-mono bg-slate-50 flex-1">
+              {JSON.stringify(fhirBundle, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
