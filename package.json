@@ -1,13 +1,38 @@
 {
-  "name": "ayush-caseflow",
+  "name": "medikiosk-ai",
+  "description": "MediKiosk AI — AYUSH Smart Pre-Consultation Platform (SIH-26047). Bilingual, voice-enabled, fully-accessible patient kiosk for AYUSH OPDs. Supports 4 languages, adaptive SOCRATES interview, Document OCR, ABHA/Aadhaar auth, FHIR R4 bundle, and real-time red-flag triage.",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
+  "homepage": "https://github.com/shauryapratap969687-cmyk/New_SIH_26047",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shauryapratap969687-cmyk/New_SIH_26047.git"
+  },
+  "keywords": [
+    "ayush",
+    "medikiosk",
+    "sih-26047",
+    "smart-india-hackathon",
+    "ayurveda",
+    "homoeopathy",
+    "unani",
+    "siddha",
+    "abha",
+    "abdm",
+    "fhir",
+    "patient-kiosk",
+    "accessibility",
+    "voice-interface",
+    "react",
+    "typescript"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "lint": "oxlint src/",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "clsx": "^2.1.1",
