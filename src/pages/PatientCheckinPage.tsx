@@ -28,6 +28,10 @@ import { useAutoSpeak } from '../hooks/useAutoSpeak';
 import { STRINGS, LANG_META } from '../i18n/strings';
 import type { SupportedLang } from '../i18n/strings';
 import { HelpChatbot } from '../components/HelpChatbot';
+import { BodyMap, REGION_TO_OPTION } from '../components/BodyMap';
+import { FacesPainScale } from '../components/FacesPainScale';
+import { QueueTracker } from '../components/QueueTracker';
+import { DischargeCard } from '../components/DischargeCard';
 
 // ---- Constants ----
 const KIOSK_STEPS: ProgressStep[] = [
@@ -1064,23 +1068,43 @@ export const PatientCheckinPage: React.FC = () => {
               )
             )}
 
-            {/* Multi select */}
+            {/* Multi select — SITE question uses interactive BodyMap */}
             {currentQuestion.type === 'multi_select' && currentQuestion.options && (
               <>
-                {renderOptionGrid(
-                  currentQuestion,
-                  currentQuestion.id === 'chief_complaint' ? (answers.chiefComplaintTags || []) :
-                  currentQuestion.socratesKey === 'associatedSymptoms' ? (answers.associatedSymptoms || []) :
-                  (answers.ros || []),
-                  (id) => handleMultiSelect(id, currentQuestion),
+                {currentQuestion.socratesKey === 'site' ? (
+                  /* ── Body Map for pain location ── */
+                  <div className="space-y-4">
+                    <BodyMap
+                      selectedIds={answers.site ? [answers.site] : []}
+                      onSelect={(regionId) => {
+                        const optionId = REGION_TO_OPTION[regionId] ?? regionId;
+                        const newAnswers = { ...answers, site: optionId };
+                        setAnswers(newAnswers);
+                        playTone('done');
+                        setTimeout(() => advanceQuestion(newAnswers), 400);
+                      }}
+                      multi={false}
+                    />
+                  </div>
+                ) : (
+                  /* ── Regular multi-select grid ── */
+                  <>
+                    {renderOptionGrid(
+                      currentQuestion,
+                      currentQuestion.id === 'chief_complaint' ? (answers.chiefComplaintTags || []) :
+                      currentQuestion.socratesKey === 'associatedSymptoms' ? (answers.associatedSymptoms || []) :
+                      (answers.ros || []),
+                      (id) => handleMultiSelect(id, currentQuestion),
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => advanceQuestion(answers)}
+                      className="mt-4 w-full py-4 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-bold text-base shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
+                    >
+                      {t('next')} →
+                    </button>
+                  </>
                 )}
-                <button
-                  type="button"
-                  onClick={() => advanceQuestion(answers)}
-                  className="mt-4 w-full py-4 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-bold text-base shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300 transition-all active:scale-95"
-                >
-                  {t('next')} →
-                </button>
               </>
             )}
 
@@ -1120,45 +1144,59 @@ export const PatientCheckinPage: React.FC = () => {
               </div>
             )}
 
-            {/* Slider (severity) */}
+            {/* Slider (severity) — enhanced with FACES Pain Scale */}
             {currentQuestion.type === 'slider' && (
               <div className="space-y-6">
-                <div className="text-center">
-                  <div
-                    className={`text-6xl font-black transition-all ${sliderValue <= 3 ? 'text-green-500' : sliderValue <= 6 ? 'text-amber-500' : 'text-red-600'}`}
-                    aria-live="polite"
-                    aria-label={`Severity: ${sliderValue} out of 10`}
-                  >
-                    {sliderValue}
-                  </div>
-                  <div className="text-sm text-slate-500 mt-1">
-                    {sliderValue <= 2 ? '😊 Very mild' : sliderValue <= 4 ? '😐 Mild' : sliderValue <= 6 ? '😣 Moderate' : sliderValue <= 8 ? '😰 Severe' : '😱 Very severe'}
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min={currentQuestion.min ?? 1}
-                  max={currentQuestion.max ?? 10}
-                  step={currentQuestion.step ?? 1}
-                  value={sliderValue}
-                  onChange={e => { setSliderValue(Number(e.target.value)); speak(`${e.target.value} out of 10`); }}
-                  aria-label={t(currentQuestion.labelKey)}
-                  className="w-full h-3 rounded-full accent-teal-600 cursor-pointer"
+                {/* FACES Pain Scale — primary input for low-literacy patients */}
+                <FacesPainScale
+                  value={sliderValue % 2 === 0 ? sliderValue : null}
+                  onChange={(score) => {
+                    setSliderValue(score);
+                    speak(`${score} out of 10`);
+                  }}
                 />
-                {/* Large tap targets for exact numbers */}
-                <div className="flex justify-between gap-1" role="group" aria-label="Pain scale tap buttons">
-                  {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
-                    <button
-                      key={n}
-                      type="button"
-                      aria-label={`${n} out of 10`}
-                      aria-pressed={sliderValue === n}
-                      onClick={() => { setSliderValue(n); speak(`${n} out of 10`); }}
-                      className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${sliderValue === n ? 'bg-teal-600 border-teal-600 text-white' : n <= 3 ? 'bg-green-50 border-green-200 text-green-700' : n <= 6 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-red-50 border-red-200 text-red-700'}`}
+                {/* Divider */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <span className="text-xs text-slate-400 font-medium">or use number scale</span>
+                  <div className="flex-1 h-px bg-slate-200" />
+                </div>
+                {/* Original numeric slider kept as secondary */}
+                <div>
+                  <div className="text-center mb-3">
+                    <div
+                      className={`text-5xl font-black transition-all ${sliderValue <= 3 ? 'text-green-500' : sliderValue <= 6 ? 'text-amber-500' : 'text-red-600'}`}
+                      aria-live="polite"
+                      aria-label={`Severity: ${sliderValue} out of 10`}
                     >
-                      {n}
-                    </button>
-                  ))}
+                      {sliderValue}
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={currentQuestion.min ?? 1}
+                    max={currentQuestion.max ?? 10}
+                    step={currentQuestion.step ?? 1}
+                    value={sliderValue}
+                    onChange={e => { setSliderValue(Number(e.target.value)); speak(`${e.target.value} out of 10`); }}
+                    aria-label={t(currentQuestion.labelKey)}
+                    className="w-full h-3 rounded-full accent-teal-600 cursor-pointer"
+                  />
+                  {/* Large tap targets */}
+                  <div className="flex justify-between gap-1 mt-3" role="group" aria-label="Pain scale tap buttons">
+                    {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        aria-label={`${n} out of 10`}
+                        aria-pressed={sliderValue === n}
+                        onClick={() => { setSliderValue(n); speak(`${n} out of 10`); }}
+                        className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${sliderValue === n ? 'bg-teal-600 border-teal-600 text-white' : n <= 3 ? 'bg-green-50 border-green-200 text-green-700' : n <= 6 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-red-50 border-red-200 text-red-700'}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1502,45 +1540,48 @@ export const PatientCheckinPage: React.FC = () => {
             STEP 5 — TOKEN / DONE
         ==================================================== */}
         {kioskStep === 5 && submittedIntake && (
-          <section aria-labelledby="token-title" className="text-center py-4">
-            <div className="text-7xl mb-4" aria-hidden="true">🎉</div>
-            <h1 id="token-title" className="text-3xl font-black text-teal-800 mb-2">{t('tokenTitle')}</h1>
-
-            {/* Big token */}
-            <div
-              className="my-6 p-8 bg-teal-600 text-white rounded-3xl shadow-xl"
-              aria-label={`Your token number is ${tokenNumber}`}
-            >
-              <p className="text-sm font-semibold opacity-80 mb-2">Your OPD Token</p>
-              <p className="text-5xl font-black tracking-widest">{tokenNumber}</p>
-              <p className="text-sm opacity-80 mt-3">{submittedIntake.preferredAyushSystem} OPD</p>
+          <section aria-labelledby="token-title" className="space-y-6 pb-8">
+            {/* Celebration */}
+            <div className="text-center py-4">
+              <div className="text-7xl mb-3" aria-hidden="true">🎉</div>
+              <h1 id="token-title" className="text-3xl font-black text-teal-800 mb-2">{t('tokenTitle')}</h1>
+              <p className="text-slate-600">{t('waitMessage')}</p>
             </div>
 
-            <p className="text-slate-600 text-lg leading-relaxed">{t('waitMessage')}</p>
-
+            {/* Red flag priority alert */}
             {submittedIntake.isRedFlagEmergency && (
-              <div role="alert" aria-live="assertive" className="mt-4 p-4 bg-red-50 border-2 border-red-400 rounded-2xl flex items-start gap-3">
+              <div role="alert" aria-live="assertive" className="p-4 bg-red-50 border-2 border-red-400 rounded-2xl flex items-start gap-3">
                 <span className="text-3xl" aria-hidden="true">🚨</span>
-                <div className="text-left">
+                <div>
                   <p className="font-bold text-red-700">Priority Triage Patient</p>
-                  <p className="text-red-600 text-sm">You have been marked as Priority. Please alert a staff member immediately.</p>
+                  <p className="text-red-600 text-sm">Emergency symptoms detected. Please alert a staff member immediately — do NOT wait in queue.</p>
                 </div>
               </div>
             )}
 
-            {/* Audio confirmation button */}
+            {/* ── Live Queue Tracker ── */}
+            <QueueTracker
+              tokenNumber={tokenNumber}
+              ayushSystem={submittedIntake.preferredAyushSystem}
+              isRedFlag={submittedIntake.isRedFlagEmergency}
+            />
+
+            {/* Audio confirmation */}
             <button
               type="button"
               onClick={() => speak(t('tokenAudio').replace('{token}', tokenNumber))}
               aria-label="Hear your token number again"
-              className="mt-6 w-full py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-bold text-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300 transition-all"
+              className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-bold text-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300 transition-all"
             >
               🔊 Hear my token number again
             </button>
 
+            {/* ── Discharge Card ── */}
+            <DischargeCard intake={submittedIntake} />
+
             <Link
               to="/login"
-              className="mt-4 block py-3 border-2 border-slate-200 rounded-2xl text-slate-600 font-semibold hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 transition-all"
+              className="block py-3 border-2 border-slate-200 rounded-2xl text-slate-600 font-semibold text-center hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 transition-all"
             >
               {t('returnToDashboard')}
             </Link>
