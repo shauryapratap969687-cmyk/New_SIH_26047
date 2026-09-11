@@ -12,6 +12,7 @@ import { CaseTakingPage } from './pages/CaseTakingPage';
 import { SavedCasesPage } from './pages/SavedCasesPage';
 import { CaseDetailPage } from './pages/CaseDetailPage';
 import { PatientCheckinPage } from './pages/PatientCheckinPage';
+import { HelpChatbot } from './components/HelpChatbot';
 
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
@@ -21,6 +22,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         {children}
       </main>
       <Footer />
+      {/* Help chatbot available on all doctor pages too */}
+      <HelpChatbot />
     </div>
   );
 };

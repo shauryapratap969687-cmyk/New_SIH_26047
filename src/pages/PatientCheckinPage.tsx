@@ -27,6 +27,7 @@ import { AccessibilityToolbar } from '../components/AccessibilityToolbar';
 import { useAutoSpeak } from '../hooks/useAutoSpeak';
 import { STRINGS, LANG_META } from '../i18n/strings';
 import type { SupportedLang } from '../i18n/strings';
+import { HelpChatbot } from '../components/HelpChatbot';
 
 // ---- Constants ----
 const KIOSK_STEPS: ProgressStep[] = [
@@ -1579,6 +1580,13 @@ export const PatientCheckinPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Help Assistant Chatbot (bottom-left, always present) ── */}
+      <HelpChatbot
+        currentStep={kioskStep}
+        currentQuestionText={currentQuestion ? t(currentQuestion.audioKey) : undefined}
+        currentQuestionLabel={currentQuestion ? t(currentQuestion.labelKey) : undefined}
+      />
     </div>
   );
 };
