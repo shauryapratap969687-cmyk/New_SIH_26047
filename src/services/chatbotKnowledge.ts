@@ -1,6 +1,4 @@
-// MediKiosk AI — Help Assistant Knowledge Base
-// Offline, rule-based NLP for the patient-facing chatbot.
-// No API key needed. Works on a ₹3,000 tablet with no internet.
+import { HOSPITAL_CONFIG, deptLocation, SYSTEM_WAIT_ESTIMATE } from '../config/hospitalConfig';
 
 export type ChatCategory =
   | 'navigation'
@@ -47,10 +45,10 @@ export const KNOWLEDGE_BASE: ChatEntry[] = [
     keywords: ['hello', 'hi', 'hey', 'namaste', 'help', 'start', 'assist'],
     hindiKeywords: ['namaste', 'help chahiye', 'madad'],
     response: {
-      en: "Hello! I'm your MediKiosk Help Assistant 🤖\n\nI can help you with:\n• 🗺️ Finding rooms & departments\n• 📖 Explaining medical terms\n• 📄 What documents to bring\n• 🌿 AYUSH wellness questions\n• ⏱️ Process & wait time\n• 🚨 Emergency contacts\n\nWhat would you like to know?",
-      hi: "नमस्ते! मैं आपका MediKiosk सहायक हूँ 🤖\n\nमैं इनमें मदद कर सकता हूँ:\n• 🗺️ कमरे और विभाग ढूंढना\n• 📖 चिकित्सा शब्द समझाना\n• 📄 कौन से दस्तावेज़ लाने हैं\n• 🌿 AYUSH स्वास्थ्य प्रश्न\n• ⏱️ प्रक्रिया और प्रतीक्षा समय\n• 🚨 आपातकालीन संपर्क\n\nआप क्या जानना चाहते हैं?",
-      ta: "வணக்கம்! நான் உங்கள் MediKiosk உதவியாளர் 🤖\n\nநான் உதவக்கூடியவை:\n• 🗺️ அறைகள் & துறைகள்\n• 📖 மருத்துவ சொற்கள்\n• 📄 தேவையான ஆவணங்கள்\n• 🌿 AYUSH கேள்விகள்\n• ⏱️ காத்திருப்பு நேரம்\n• 🚨 அவசர தொடர்பு\n\nநீங்கள் என்ன தெரிந்துகொள்ள விரும்புகிறீர்கள்?",
-      bn: "নমস্কার! আমি আপনার MediKiosk সহায়ক 🤖\n\nআমি সাহায্য করতে পারি:\n• 🗺️ কক্ষ ও বিভাগ খুঁজে পেতে\n• 📖 চিকিৎসা শব্দ বোঝাতে\n• 📄 কী কাগজপত্র আনতে হবে\n• 🌿 AYUSH স্বাস্থ্য প্রশ্ন\n• ⏱️ অপেক্ষার সময়\n• 🚨 জরুরি যোগাযোগ\n\nআপনি কী জানতে চান?",
+      en: `Hello! I'm your ${HOSPITAL_CONFIG.shortName} Help Assistant 🤖\n\nI can help you with:\n• 🗺️ Finding rooms & departments\n• 📖 Explaining medical terms\n• 📄 What documents to bring\n• 🌿 AYUSH wellness questions\n• ⏱️ Process & wait time\n• 🚨 Emergency contacts\n\nWhat would you like to know?`,
+      hi: `नमस्ते! मैं आपका ${HOSPITAL_CONFIG.shortName} सहायक हूँ 🤖\n\nमैं इनमें मदद कर सकता हूँ:\n• 🗺️ कमरे और विभाग ढूंढना\n• 📖 चिकित्सा शब्द समझाना\n• 📄 कौन से दस्तावेज़ लाने हैं\n• 🌿 AYUSH स्वास्थ्य प्रश्न\n• ⏱️ प्रक्रिया और प्रतीक्षा समय\n• 🚨 आपातकालीन संपर्क\n\nआप क्या जानना चाहते हैं?`,
+      ta: `வணக்கம்! நான் உங்கள் ${HOSPITAL_CONFIG.shortName} உதவியாளர் 🤖\n\nநான் உதவக்கூடியவை:\n• 🗺️ அறைகள் & துறைகள்\n• 📖 மருத்துவ சொற்கள்\n• 📄 தேவையான ஆவணங்கள்\n• 🌿 AYUSH கேள்விகள்\n• ⏱️ காத்திருப்பு நேரம்\n• 🚨 அவசர தொடர்பு\n\nநீங்கள் என்ன தெரிந்துகொள்ள விரும்புகிறீர்கள்?`,
+      bn: `নমস্কার! আমি আপনার ${HOSPITAL_CONFIG.shortName} সহায়ক 🤖\n\nআমি সাহায্য করতে পারি:\n• 🗺️ কক্ষ ও বিভাগ খুঁজে পেতে\n• 📖 চিকিৎসা শব্দ বোঝাতে\n• 📄 কী কাগজপত্র আনতে হবে\n• 🌿 AYUSH স্বাস্থ্য প্রশ্ন\n• ⏱️ অপেক্ষার সময়\n• 🚨 জরুরি যোগাযোগ\n\nআপনি কী জানতে চান?`,
     },
     followUpChips: ['Where is the lab?', 'What is HPI?', 'Documents needed', 'Wait time'],
   },
@@ -62,10 +60,10 @@ export const KNOWLEDGE_BASE: ChatEntry[] = [
     keywords: ['lab', 'laboratory', 'blood test', 'urine test', 'sample', 'pathology', 'test room', 'lab room'],
     hindiKeywords: ['lab', 'laboratory', 'blood test', 'khoon jaanch', 'peshab jaanch'],
     response: {
-      en: "🔬 Lab / Pathology Department\n\nLocation: Ground Floor, Wing B — follow the Blue Line on the floor from the main entrance.\n\nTiming: 7:00 AM – 1:00 PM (fasting samples preferred before 10 AM)\n\nFor emergency lab: Gate 2, 24×7\n\n💡 Tip: Bring your doctor's requisition slip. Fasting tests require nothing to eat/drink for 8–10 hours.",
-      hi: "🔬 Lab / पैथोलॉजी विभाग\n\nस्थान: ग्राउंड फ्लोर, Wing B — मुख्य प्रवेश द्वार से नीली लाइन का पालन करें\n\nसमय: सुबह 7:00 – दोपहर 1:00 (फास्टिंग सैंपल 10 AM से पहले)\n\nआपातकालीन Lab: Gate 2, 24×7\n\n💡 टिप: डॉक्टर का पर्चा लेकर जाएं। फास्टिंग टेस्ट के लिए 8–10 घंटे खाली पेट रहें।",
-      ta: "🔬 ஆய்வகம் / Pathology\n\nஇடம்: Ground Floor, Wing B — நீல வரி பின்பற்றவும்\n\nநேரம்: காலை 7:00 – பகல் 1:00\n\nதொலைபேசி: Gate 2, 24×7\n\n💡 குறிப்பு: மருத்துவரின் தேவைப்பத்திரம் கொண்டு வரவும்.",
-      bn: "🔬 ল্যাব / Pathology বিভাগ\n\nঅবস্থান: গ্রাউন্ড ফ্লোর, Wing B — নীল লাইন অনুসরণ করুন\n\nসময়: সকাল 7:00 – দুপুর 1:00\n\nজরুরি Lab: Gate 2, 24×7\n\n💡 টিপস: ডাক্তারের প্রেসক্রিপশন আনুন।",
+      en: `🔬 ${HOSPITAL_CONFIG.departments.lab.name}\n\nLocation: ${deptLocation(HOSPITAL_CONFIG.departments.lab)}\n\nTiming: ${HOSPITAL_CONFIG.departments.lab.timings}\n\nPhone: ${HOSPITAL_CONFIG.departments.lab.phone || 'N/A'}\n\n💡 Tip: ${HOSPITAL_CONFIG.departments.lab.notes || 'Bring your doctor\'s slip.'}`,
+      hi: `🔬 ${HOSPITAL_CONFIG.departments.lab.name}\n\nस्थान: ${deptLocation(HOSPITAL_CONFIG.departments.lab)}\n\nसमय: ${HOSPITAL_CONFIG.departments.lab.timings}\n\nफ़ोन: ${HOSPITAL_CONFIG.departments.lab.phone || 'N/A'}\n\n💡 टिप: डॉक्टर का पर्चा लेकर जाएं। फास्टिंग टेस्ट के लिए 8–10 घंटे खाली पेट रहें।`,
+      ta: `🔬 ஆய்வகம்\n\nஇடம்: ${deptLocation(HOSPITAL_CONFIG.departments.lab)}\n\nநேரம்: ${HOSPITAL_CONFIG.departments.lab.timings}\n\n💡 குறிப்பு: மருத்துவரின் தேவைப்பத்திரம் கொண்டு வரவும்.`,
+      bn: `🔬 ল্যাব\n\nঅবস্থান: ${deptLocation(HOSPITAL_CONFIG.departments.lab)}\n\nসময়: ${HOSPITAL_CONFIG.departments.lab.timings}\n\n💡 টিপস: ডাক্তারের প্রেসক্রিপশন আনুন।`,
     },
     followUpChips: ['Pharmacy location', 'X-Ray room', 'What documents needed?'],
   },
@@ -75,10 +73,10 @@ export const KNOWLEDGE_BASE: ChatEntry[] = [
     keywords: ['pharmacy', 'medicine', 'medical store', 'dawai', 'dawa', 'drug store'],
     hindiKeywords: ['pharmacy', 'dawai', 'dawa', 'medical store'],
     response: {
-      en: "💊 Pharmacy\n\nLocation: Ground Floor, Main Corridor — near OPD Registration desk\n\nHours: 8:00 AM – 8:00 PM (Mon–Sat), 9 AM – 2 PM (Sunday)\n\nAYUSH Medicines (Ayurvedic, Unani, Siddha, Homoeopathic):\nSpecial AYUSH Pharmacy — Room 12, First Floor\nHours: 9:00 AM – 5:00 PM",
-      hi: "💊 Pharmacy\n\nस्थान: ग्राउंड फ्लोर, मुख्य गलियारा — OPD Registration काउंटर के पास\n\nसमय: 8:00 AM – 8:00 PM (सोम–शनि), 9 AM – 2 PM (रविवार)\n\nAYUSH दवाएं: कमरा 12, पहली मंज़िल\nसमय: 9:00 AM – 5:00 PM",
-      ta: "💊 மருந்தகம்\n\nஇடம்: Ground Floor, OPD Registration counter அருகில்\n\nநேரம்: காலை 8:00 – இரவு 8:00 (திங்கள்–சனி)\n\nAYUSH மருந்துகள்: அறை 12, முதல் தளம்",
-      bn: "💊 ফার্মেসি\n\nঅবস্থান: গ্রাউন্ড ফ্লোর, OPD Registration কাউন্টারের কাছে\n\nসময়: সকাল 8:00 – রাত 8:00 (সোম–শনি)\n\nAYUSH ওষুধ: কক্ষ 12, প্রথম তলা",
+      en: `💊 ${HOSPITAL_CONFIG.departments.pharmacy.name}\n\nLocation: ${deptLocation(HOSPITAL_CONFIG.departments.pharmacy)}\n\nHours: ${HOSPITAL_CONFIG.departments.pharmacy.timings}\n\nPhone: ${HOSPITAL_CONFIG.departments.pharmacy.phone || 'N/A'}${HOSPITAL_CONFIG.departments.ayushPharmacy ? `\n\n🌿 ${HOSPITAL_CONFIG.departments.ayushPharmacy.name}:\nLocation: ${deptLocation(HOSPITAL_CONFIG.departments.ayushPharmacy)}\nHours: ${HOSPITAL_CONFIG.departments.ayushPharmacy.timings}` : ''}`,
+      hi: `💊 फार्मेसी\n\nस्थान: ${deptLocation(HOSPITAL_CONFIG.departments.pharmacy)}\n\nसमय: ${HOSPITAL_CONFIG.departments.pharmacy.timings}${HOSPITAL_CONFIG.departments.ayushPharmacy ? `\n\n🌿 AYUSH दवाएं:\nस्थान: ${deptLocation(HOSPITAL_CONFIG.departments.ayushPharmacy)}\nसमय: ${HOSPITAL_CONFIG.departments.ayushPharmacy.timings}` : ''}`,
+      ta: `💊 மருந்தகம்\n\nஇடம்: ${deptLocation(HOSPITAL_CONFIG.departments.pharmacy)}\n\nநேரம்: ${HOSPITAL_CONFIG.departments.pharmacy.timings}`,
+      bn: `💊 ফার্মেসি\n\nঅবস্থান: ${deptLocation(HOSPITAL_CONFIG.departments.pharmacy)}\n\nসময়: ${HOSPITAL_CONFIG.departments.pharmacy.timings}`,
     },
     followUpChips: ['Where is the lab?', 'Wait time', 'What is Ayurveda?'],
   },
@@ -87,10 +85,10 @@ export const KNOWLEDGE_BASE: ChatEntry[] = [
     category: 'navigation',
     keywords: ['xray', 'x-ray', 'x ray', 'radiology', 'scan', 'mri', 'ultrasound', 'sonography', 'ct scan'],
     response: {
-      en: "🩻 Radiology / Imaging\n\nX-Ray: Ground Floor, Wing C — follow Red Line\nTiming: 8:00 AM – 4:00 PM\n\nUltrasound / Sonography: First Floor, Room 8\nTiming: 9:00 AM – 3:00 PM (by appointment)\n\nMRI / CT Scan: Referral to Government Medical College (our staff will assist)\n\n💡 Please carry your doctor's slip.",
-      hi: "🩻 Radiology / इमेजिंग\n\nX-Ray: ग्राउंड फ्लोर, Wing C — लाल रेखा का पालन करें\nसमय: 8:00 AM – 4:00 PM\n\nUltrasound: पहली मंज़िल, कमरा 8\nसमय: 9:00 AM – 3:00 PM\n\nMRI/CT: जिला अस्पताल रेफर (हमारा स्टाफ मदद करेगा)",
-      ta: "🩻 Radiology\n\nX-Ray: Ground Floor, Wing C\nநேரம்: காலை 8:00 – மாலை 4:00\n\nUltrasound: முதல் தளம், அறை 8\n\nMRI/CT: அரசு மருத்துவமனைக்கு பரிந்துரை",
-      bn: "🩻 Radiology\n\nX-Ray: Ground Floor, Wing C\nসময়: সকাল 8:00 – বিকেল 4:00\n\nUltrasound: প্রথম তলা, কক্ষ 8\n\nMRI/CT: জেলা হাসপাতালে রেফার",
+      en: `🩻 ${HOSPITAL_CONFIG.departments.xray.name}\n\nX-Ray Location: ${deptLocation(HOSPITAL_CONFIG.departments.xray)}\nTimings: ${HOSPITAL_CONFIG.departments.xray.timings}\n\n💡 Note: ${HOSPITAL_CONFIG.departments.xray.notes || 'Please carry your doctor\'s slip.'}`,
+      hi: `🩻 Radiology / इमेजिंग\n\nX-Ray स्थान: ${deptLocation(HOSPITAL_CONFIG.departments.xray)}\nसमय: ${HOSPITAL_CONFIG.departments.xray.timings}\n\n💡 ध्यान दें: ${HOSPITAL_CONFIG.departments.xray.notes || 'डॉक्टर का पर्चा लाएं।'}`,
+      ta: `🩻 Radiology\n\nX-Ray: ${deptLocation(HOSPITAL_CONFIG.departments.xray)}\nநேரம்: ${HOSPITAL_CONFIG.departments.xray.timings}`,
+      bn: `🩻 Radiology\n\nX-Ray: ${deptLocation(HOSPITAL_CONFIG.departments.xray)}\nসময়: ${HOSPITAL_CONFIG.departments.xray.timings}`,
     },
     followUpChips: ['Where is the lab?', 'What documents needed?'],
   },
@@ -100,10 +98,10 @@ export const KNOWLEDGE_BASE: ChatEntry[] = [
     keywords: ['toilet', 'washroom', 'bathroom', 'restroom', 'wc', 'sukhalaya'],
     hindiKeywords: ['toilet', 'bathroom', 'shauchalaya'],
     response: {
-      en: "🚻 Toilets / Restrooms\n\nGround Floor: Near main entrance (left side) and near OPD waiting area\nFirst Floor: At both ends of the corridor\nSeparate facilities for Men 🚹, Women 🚺, and Persons with Disability ♿\n\nAll toilets are wheelchair accessible.",
-      hi: "🚻 शौचालय\n\nग्राउंड फ्लोर: मुख्य प्रवेश द्वार के पास (बाईं ओर) और OPD प्रतीक्षा क्षेत्र के पास\nपहली मंज़िल: दोनों छोर पर\n\nपुरुष 🚹, महिला 🚺, और दिव्यांगजन ♿ के लिए अलग सुविधाएं।",
-      ta: "🚻 கழிவறைகள்\n\nGround Floor: முக்கிய நுழைவாயில் அருகில் மற்றும் OPD காத்திருப்பு பகுதி அருகில்\n\nஆண் 🚹, பெண் 🚺, மற்றும் மாற்றுத்திறனாளிகளுக்கு ♿ தனி வசதிகள்",
-      bn: "🚻 টয়লেট\n\nগ্রাউন্ড ফ্লোর: প্রধান প্রবেশদ্বারের কাছে এবং OPD ওয়েটিং এরিয়ার কাছে\n\nপুরুষ 🚹, মহিলা 🚺, প্রতিবন্ধী ♿ আলাদা সুবিধা",
+      en: `🚻 Toilets / Restrooms\n\nGround Floor: ${HOSPITAL_CONFIG.departments.toilets?.groundFloor || 'Ask at reception'}\nFirst Floor: ${HOSPITAL_CONFIG.departments.toilets?.firstFloor || 'Ask at reception'}\n\nSeparate facilities for Men 🚹, Women 🚺, and Persons with Disability ♿\n\nAll toilets are wheelchair accessible.`,
+      hi: `🚻 शौचालय\n\nग्राउंड फ्लोर: ${HOSPITAL_CONFIG.departments.toilets?.groundFloor || 'रिसेप्शन पर पूछें'}\nपहली मंज़िल: ${HOSPITAL_CONFIG.departments.toilets?.firstFloor || 'रिसेप्शन पर पूछें'}\n\nपुरुष 🚹, महिला 🚺, और दिव्यांगजन ♿ के लिए अलग सुविधाएं।`,
+      ta: `🚻 கழிவறைகள்\n\nGround Floor: ${HOSPITAL_CONFIG.departments.toilets?.groundFloor || 'விசாரிக்கவும்'}\n\nஆண் 🚹, பெண் 🚺, மற்றும் மாற்றுத்திறனாளிகளுக்கு ♿ தனி வசதிகள்`,
+      bn: `🚻 টয়লেট\n\nগ্রাউন্ড ফ্লোর: ${HOSPITAL_CONFIG.departments.toilets?.groundFloor || 'জিজ্ঞেস করুন'}\n\nপুরুষ 🚹, মহিলা 🚺, প্রতিবন্ধী ♿ আলাদা সুবিধা`,
     },
   },
   {
@@ -111,10 +109,10 @@ export const KNOWLEDGE_BASE: ChatEntry[] = [
     category: 'navigation',
     keywords: ['opd', 'outpatient', 'registration', 'reception', 'counter', 'token', 'queue', 'number'],
     response: {
-      en: "🏥 OPD Registration & Queue\n\nRegistration Counter: Ground Floor, Room 1 (main entrance, right side)\nTiming: 8:00 AM – 1:00 PM (new patients)\n\nYour OPD token is automatically generated by this kiosk after you finish. Please wait in the seating area — your token number will be called on the display board and announced over the speaker.\n\n📢 For token updates, watch the screens on the walls.",
-      hi: "🏥 OPD Registration\n\nRegistration काउंटर: ग्राउंड फ्लोर, कमरा 1 (मुख्य प्रवेश, दाईं ओर)\nसमय: 8:00 AM – 1:00 PM\n\nआपका OPD टोकन इस kiosk द्वारा स्वचालित रूप से जनरेट किया जाएगा। प्रतीक्षा क्षेत्र में बैठें — आपका नंबर डिस्प्ले बोर्ड पर दिखेगा।",
-      ta: "🏥 OPD Registration\n\nRegistration counter: Ground Floor, Room 1\nநேரம்: காலை 8:00 – பகல் 1:00\n\nஉங்கள் OPD token இந்த kiosk மூலம் தானாக உருவாகும். காத்திருப்பு பகுதியில் இருங்கள்.",
-      bn: "🏥 OPD Registration\n\nRegistration কাউন্টার: Ground Floor, কক্ষ 1\nসময়: সকাল 8:00 – দুপুর 1:00\n\nআপনার OPD টোকন এই kiosk দ্বারা স্বয়ংক্রিয়ভাবে তৈরি হবে।",
+      en: `🏥 ${HOSPITAL_CONFIG.departments.opd.name}\n\nLocation: ${deptLocation(HOSPITAL_CONFIG.departments.opd)}\nTiming: ${HOSPITAL_CONFIG.departments.opd.timings}\n\nYour OPD token is automatically generated by this kiosk after you finish. Please wait in the seating area — your token number will be called on the display board and announced over the speaker.\n\n📢 For token updates, watch the screens on the walls.`,
+      hi: `🏥 OPD Registration\n\nस्थान: ${deptLocation(HOSPITAL_CONFIG.departments.opd)}\nसमय: ${HOSPITAL_CONFIG.departments.opd.timings}\n\nआपका OPD टोकन इस kiosk द्वारा स्वचालित रूप से जनरेट किया जाएगा। प्रतीक्षा क्षेत्र में बैठें — आपका नंबर डिस्प्ले बोर्ड पर दिखेगा।`,
+      ta: `🏥 OPD Registration\n\nஇடம்: ${deptLocation(HOSPITAL_CONFIG.departments.opd)}\nநேரம்: ${HOSPITAL_CONFIG.departments.opd.timings}\n\nஉங்கள் OPD token இந்த kiosk மூலம் தானாக உருவாகும். காத்திருப்பு பகுதியில் இருங்கள்.`,
+      bn: `🏥 OPD Registration\n\nঅবস্থান: ${deptLocation(HOSPITAL_CONFIG.departments.opd)}\nসময়: ${HOSPITAL_CONFIG.departments.opd.timings}\n\nআপনার OPD টোকন এই kiosk দ্বারা স্বয়ংক্রিয়ভাবে তৈরি হবে।`,
     },
     followUpChips: ['How long is the wait?', 'What documents needed?'],
   },
@@ -124,13 +122,14 @@ export const KNOWLEDGE_BASE: ChatEntry[] = [
     keywords: ['wait', 'waiting', 'how long', 'time', 'duration', 'queue long', 'kitna time'],
     hindiKeywords: ['wait', 'kitna time', 'intezaar', 'der'],
     response: {
-      en: "⏱️ Estimated Wait Times (today)\n\nAyurveda OPD: ~25–35 minutes\nHomoeopathy OPD: ~15–20 minutes\nUnani OPD: ~20–30 minutes\nSiddha OPD: ~20–25 minutes\nYoga & Naturopathy: ~10–15 minutes\n\n📢 Your token will be announced on the speaker system and shown on the wall display.\n\n💡 Tip: You can use this waiting time to upload your old prescriptions and reports on the kiosk — it saves time with the doctor!",
-      hi: "⏱️ अनुमानित प्रतीक्षा समय (आज)\n\nAyurveda OPD: ~25–35 मिनट\nHomoeopathy OPD: ~15–20 मिनट\nUnani OPD: ~20–30 मिनट\nSiddha OPD: ~20–25 मिनट\nYoga & Naturopathy: ~10–15 मिनट\n\n📢 आपका टोकन स्पीकर और डिस्प्ले बोर्ड पर दिखेगा।\n\n💡 टिप: प्रतीक्षा के दौरान kiosk पर पुराने नुस्खे और रिपोर्ट अपलोड करें!",
-      ta: "⏱️ தோராயமான காத்திருப்பு நேரம்\n\nAyurveda OPD: ~25–35 நிமிடங்கள்\nHomoeopathy: ~15–20 நிமிடங்கள்\nUnani: ~20–30 நிமிடங்கள்\n\n📢 உங்கள் token speaker மூலம் அறிவிக்கப்படும்.",
-      bn: "⏱️ আনুমানিক অপেক্ষার সময়\n\nAyurveda OPD: ~25–35 মিনিট\nHomoeopathy: ~15–20 মিনিট\nUnani: ~20–30 মিনিট\n\n📢 আপনার টোকন স্পিকারে ঘোষণা করা হবে।",
+      en: `⏱️ Estimated Wait Times (today at ${HOSPITAL_CONFIG.shortName})\n\nAyurveda OPD: ~${SYSTEM_WAIT_ESTIMATE['Ayurveda']} minutes\nHomoeopathy OPD: ~${SYSTEM_WAIT_ESTIMATE['Homoeopathy']} minutes\nUnani OPD: ~${SYSTEM_WAIT_ESTIMATE['Unani']} minutes\nSiddha OPD: ~${SYSTEM_WAIT_ESTIMATE['Siddha']} minutes\nYoga & Naturopathy: ~${SYSTEM_WAIT_ESTIMATE['Yoga & Naturopathy']} minutes\n\n📢 Your token will be announced on the speaker system and shown on the wall display.\n\n💡 Tip: You can use this waiting time to upload your old prescriptions and reports on the kiosk — it saves time with the doctor!`,
+      hi: `⏱️ अनुमानित प्रतीक्षा समय (आज)\n\nAyurveda OPD: ~${SYSTEM_WAIT_ESTIMATE['Ayurveda']} मिनट\nHomoeopathy OPD: ~${SYSTEM_WAIT_ESTIMATE['Homoeopathy']} मिनट\nUnani OPD: ~${SYSTEM_WAIT_ESTIMATE['Unani']} मिनट\nSiddha OPD: ~${SYSTEM_WAIT_ESTIMATE['Siddha']} मिनट\nYoga & Naturopathy: ~${SYSTEM_WAIT_ESTIMATE['Yoga & Naturopathy']} मिनट\n\n📢 आपका टोकन स्पीकर और डिस्प्ले बोर्ड पर दिखेगा।\n\n💡 टिप: प्रतीक्षा के दौरान kiosk पर पुराने नुस्खे और रिपोर्ट अपलोड करें!`,
+      ta: `⏱️ தோராயமான காத்திருப்பு நேரம்\n\nAyurveda OPD: ~${SYSTEM_WAIT_ESTIMATE['Ayurveda']} நிமிடங்கள்\nHomoeopathy: ~${SYSTEM_WAIT_ESTIMATE['Homoeopathy']} நிமிடங்கள்\nUnani: ~${SYSTEM_WAIT_ESTIMATE['Unani']} நிமிடங்கள்\n\n📢 உங்கள் token speaker மூலம் அறிவிக்கப்படும்.`,
+      bn: `⏱️ আনুমানিক অপেক্ষার সময়\n\nAyurveda OPD: ~${SYSTEM_WAIT_ESTIMATE['Ayurveda']} মিনিট\nHomoeopathy: ~${SYSTEM_WAIT_ESTIMATE['Homoeopathy']} মিনিট\nUnani: ~${SYSTEM_WAIT_ESTIMATE['Unani']} মিনিট\n\n📢 আপনার টোকন স্পিকারে ঘোষণা করা হবে।`,
     },
     followUpChips: ['Where is the waiting area?', 'What can I do while waiting?'],
   },
+
 
   // ── MEDICAL TERMS ──
   {
