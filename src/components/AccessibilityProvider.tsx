@@ -92,18 +92,72 @@ export const AccessibilityProvider: React.FC<Props> = ({ children }) => {
     return key; // fallback: return key itself
   }, [lang]);
 
-  // TTS speak function
+  // TTS speak function — with explicit voice matching for regional languages
   const speak = useCallback((text: string, overrideLang?: SupportedLang) => {
     if (!audioMode) return;
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = LANG_META[overrideLang ?? lang].ttsLang;
+      const targetLang = LANG_META[overrideLang ?? lang].ttsLang; // e.g. 'ta-IN'
+      utterance.lang = targetLang;
       utterance.rate = 0.92;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
-      window.speechSynthesis.speak(utterance);
+
+      // ── Explicitly find a matching voice ──
+      // Chrome loads voices async — getVoices() may return [] on first call.
+      // We try immediately, and if no voice found, wait for voiceschanged event.
+      const assignVoice = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length === 0) return false; // voices not loaded yet
+
+        const langPrefix = targetLang.split('-')[0]; // 'ta', 'bn', 'hi', 'en'
+
+        // Priority 1: Exact match (e.g. 'ta-IN')
+        let voice = voices.find(v => v.lang === targetLang);
+
+        // Priority 2: Prefix match (e.g. 'ta' matches 'ta-IN' or 'ta')
+        if (!voice) voice = voices.find(v => v.lang.startsWith(langPrefix));
+
+        // Priority 3: Google voice with prefix (these are higher quality)
+        if (!voice) voice = voices.find(v => v.name.toLowerCase().includes('google') && v.lang.startsWith(langPrefix));
+
+        // Priority 4: Any voice whose name contains the language name
+        const langNames: Record<string, string[]> = {
+          ta: ['tamil'],
+          bn: ['bengali', 'bangla'],
+          hi: ['hindi'],
+          en: ['english'],
+        };
+        if (!voice) {
+          const names = langNames[langPrefix] ?? [];
+          voice = voices.find(v => names.some(n => v.name.toLowerCase().includes(n)));
+        }
+
+        // Priority 5: For Tamil/Bengali — try Hindi voice as fallback (at least reads Indic scripts)
+        if (!voice && (langPrefix === 'ta' || langPrefix === 'bn')) {
+          voice = voices.find(v => v.lang.startsWith('hi'));
+        }
+
+        if (voice) {
+          utterance.voice = voice;
+          utterance.lang = voice.lang; // sync lang with actual voice
+        }
+        return true; // voices were loaded (even if no match found)
+      };
+
+      if (!assignVoice()) {
+        // Voices not loaded yet — wait for them
+        const handler = () => {
+          assignVoice();
+          window.speechSynthesis.speak(utterance);
+          window.speechSynthesis.removeEventListener('voiceschanged', handler);
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', handler);
+      } else {
+        window.speechSynthesis.speak(utterance);
+      }
     } catch (err) {
       console.error('TTS error:', err);
     }

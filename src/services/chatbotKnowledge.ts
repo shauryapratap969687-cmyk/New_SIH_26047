@@ -306,7 +306,7 @@ export const QUICK_CHIPS: QuickChip[] = [
 // ─────────────────────────────────────────────
 // SEARCH / MATCH ENGINE
 // ─────────────────────────────────────────────
-export function findBestMatch(query: string, lang: string): ChatEntry | null {
+export function findBestMatch(query: string, _lang?: string): ChatEntry | null {
   const q = query.toLowerCase().trim();
   if (!q) return null;
 
@@ -323,8 +323,8 @@ export function findBestMatch(query: string, lang: string): ChatEntry | null {
       }
     }
 
-    // Check Hindi keywords if Hindi selected
-    if ((lang === 'hi' || lang === 'en') && entry.hindiKeywords) {
+    // Check Hindi keywords (always, since patients may type Hindi regardless of UI language)
+    if (entry.hindiKeywords) {
       for (const kw of entry.hindiKeywords) {
         if (q.includes(kw.toLowerCase())) {
           score += kw.length;

@@ -125,31 +125,70 @@ export const HelpChatbot: React.FC<HelpChatbotProps> = ({
       const q = query.toLowerCase();
 
       // ── Special: explain current question ──
+      const explainKeywords = ['explain', 'samjhao', 'repeat', 'what does this mean', 'understand', 'dobara', 'kya hai', 'batao', 'புரியவில்லை', 'বুঝতে', 'samajh'];
       if (
-        (q.includes('explain') || q.includes('samjhao') || q.includes('repeat') ||
-         q.includes('what does this mean') || q.includes('understand') || q.includes('dobara')) &&
+        explainKeywords.some(k => q.includes(k)) &&
         currentQuestionText
       ) {
+        const explainResponses: Record<SupportedLang, string> = {
+          en: `🔍 Let me explain the current question:\n\n"${currentQuestionLabel ?? 'Current question'}"\n\n${currentQuestionText}\n\n💡 Just answer in your own words — there's no wrong answer! You can also tap the 🔊 button to hear it again.`,
+          hi: `🔍 मैं आपको वर्तमान प्रश्न समझाता हूँ:\n\n"${currentQuestionLabel ?? 'वर्तमान प्रश्न'}"\n\n${currentQuestionText}\n\n💡 अपने शब्दों में जवाब दें — कोई गलत जवाब नहीं है! 🔊 बटन दबाकर दोबारा सुन सकते हैं।`,
+          ta: `🔍 தற்போதைய கேள்வியை விளக்குகிறேன்:\n\n"${currentQuestionLabel ?? 'தற்போதைய கேள்வி'}"\n\n${currentQuestionText}\n\n💡 உங்கள் சொற்களில் பதிலளியுங்கள்! 🔊 பொத்தானை அழுத்தி மீண்டும் கேளுங்கள்.`,
+          bn: `🔍 বর্তমান প্রশ্নটি ব্যাখ্যা করছি:\n\n"${currentQuestionLabel ?? 'বর্তমান প্রশ্ন'}"\n\n${currentQuestionText}\n\n💡 নিজের ভাষায় উত্তর দিন — কোনো ভুল উত্তর নেই! 🔊 বোতাম টিপে আবার শুনুন।`,
+        };
         sendBotMessage(
-          `🔍 Let me explain the current question:\n\n"${currentQuestionLabel ?? 'Current question'}"\n\n${currentQuestionText}\n\n💡 Just answer in your own words — there's no wrong answer! You can also tap the 🔊 button next to the question to hear it again.`,
-          ['What is HPI?', 'How does this work?'],
+          explainResponses[lang] ?? explainResponses.en,
+          lang === 'hi' ? ['HPI क्या है?', 'यह कैसे काम करता है?'] : ['What is HPI?', 'How does this work?'],
         );
         return;
       }
 
       // ── Special: what step am I on? ──
-      if (q.includes('step') || q.includes('where am i') || q.includes('which step')) {
-        const stepNames: Record<number, string> = {
-          1: 'Step 1 — Identifying you (Language & Login)',
-          2: 'Step 2 — Telling us your symptoms (Adaptive Interview)',
-          3: 'Step 3 — Scanning your documents',
-          4: 'Step 4 — Reviewing your summary',
-          5: 'Step 5 — Done! Your OPD token has been generated',
+      const stepKeywords = ['step', 'where am i', 'which step', 'kaun sa step', 'kis step', 'kidhar', 'எந்த படி', 'কোন ধাপ'];
+      if (stepKeywords.some(k => q.includes(k))) {
+        const stepNamesMulti: Record<SupportedLang, Record<number, string>> = {
+          en: {
+            1: 'Step 1 — Identifying you (Language & Login)',
+            2: 'Step 2 — Telling us your symptoms (Adaptive Interview)',
+            3: 'Step 3 — Scanning your documents',
+            4: 'Step 4 — Reviewing your summary',
+            5: 'Step 5 — Done! Your OPD token has been generated',
+          },
+          hi: {
+            1: 'चरण 1 — पहचान (भाषा और लॉगिन)',
+            2: 'चरण 2 — लक्षण बताएं (अनुकूलित साक्षात्कार)',
+            3: 'चरण 3 — दस्तावेज़ स्कैन करें',
+            4: 'चरण 4 — सारांश की समीक्षा',
+            5: 'चरण 5 — हो गया! आपका OPD टोकन बन गया है',
+          },
+          ta: {
+            1: 'படி 1 — அடையாளம் (மொழி & உள்நுழைவு)',
+            2: 'படி 2 — அறிகுறிகள் தெரிவிக்கவும்',
+            3: 'படி 3 — ஆவணங்களை ஸ்கேன் செய்யவும்',
+            4: 'படி 4 — சுருக்கத்தை மதிப்பாய்வு செய்யவும்',
+            5: 'படி 5 — முடிந்தது! உங்கள் OPD டோக்கன் உருவாக்கப்பட்டது',
+          },
+          bn: {
+            1: 'ধাপ 1 — পরিচয় (ভাষা ও লগইন)',
+            2: 'ধাপ 2 — লক্ষণ জানান (সাক্ষাৎকার)',
+            3: 'ধাপ 3 — নথিপত্র স্ক্যান করুন',
+            4: 'ধাপ 4 — সারাংশ পর্যালোচনা',
+            5: 'ধাপ 5 — সম্পন্ন! আপনার OPD টোকেন তৈরি হয়েছে',
+          },
         };
+
+        const stepNames = stepNamesMulti[lang] ?? stepNamesMulti.en;
+        const overviewMulti: Record<SupportedLang, string> = {
+          en: '📋 This kiosk has 5 steps:\n1️⃣ Identify → 2️⃣ Interview → 3️⃣ Scan → 4️⃣ Summary → 5️⃣ Token',
+          hi: '📋 इस कियोस्क में 5 चरण हैं:\n1️⃣ पहचान → 2️⃣ साक्षात्कार → 3️⃣ स्कैन → 4️⃣ सारांश → 5️⃣ टोकन',
+          ta: '📋 இந்த கியோஸ்க்கில் 5 படிகள்:\n1️⃣ அடையாளம் → 2️⃣ நேர்காணல் → 3️⃣ ஸ்கேன் → 4️⃣ சுருக்கம் → 5️⃣ டோக்கன்',
+          bn: '📋 এই কিয়স্কে 5টি ধাপ:\n1️⃣ পরিচয় → 2️⃣ সাক্ষাৎকার → 3️⃣ স্ক্যান → 4️⃣ সারাংশ → 5️⃣ টোকেন',
+        };
+
         const stepText = currentStep
-          ? `📍 You are currently on:\n\n${stepNames[currentStep] ?? `Step ${currentStep}`}`
-          : `📋 This kiosk has 5 steps:\n1️⃣ Identify → 2️⃣ Interview → 3️⃣ Scan → 4️⃣ Summary → 5️⃣ Token`;
-        sendBotMessage(stepText, ['How does this work?', 'What is HPI?']);
+          ? `📍 ${lang === 'hi' ? 'आप अभी इस चरण पर हैं' : lang === 'ta' ? 'நீங்கள் இப்போது' : lang === 'bn' ? 'আপনি এখন এই ধাপে আছেন' : 'You are currently on'}:\n\n${stepNames[currentStep] ?? `Step ${currentStep}`}`
+          : overviewMulti[lang] ?? overviewMulti.en;
+        sendBotMessage(stepText, lang === 'hi' ? ['यह कैसे काम करता है?', 'HPI क्या है?'] : ['How does this work?', 'What is HPI?']);
         return;
       }
 
@@ -160,7 +199,9 @@ export const HelpChatbot: React.FC<HelpChatbotProps> = ({
         sendBotMessage(resp, match.followUpChips ?? []);
       } else {
         const resp = UNKNOWN_RESPONSE[lang] ?? UNKNOWN_RESPONSE.en;
-        sendBotMessage(resp, ['Where is the lab?', 'What is HPI?', 'Documents needed']);
+        sendBotMessage(resp, lang === 'hi'
+          ? ['Lab कहाँ है?', 'HPI क्या है?', 'कौन से दस्तावेज़?']
+          : ['Where is the lab?', 'What is HPI?', 'Documents needed']);
       }
     }, 600);
   }, [lang, currentStep, currentQuestionText, currentQuestionLabel, sendBotMessage, playTone]);
