@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Users,
@@ -18,10 +18,75 @@ import {
   Trash2,
   FileCheck,
   Flame,
+  Activity,
+  TrendingUp,
+  Bell,
+  Zap,
+  Shield,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { storageService } from '../services/storage';
 import type { CaseRecord, Patient, AyushSystem, PreConsultationIntake } from '../types';
+
+// ─── Animated Counter Hook ──────────────────────────────────────
+function useAnimatedCounter(target: number, duration = 1200): number {
+  const [count, setCount] = useState(0);
+  const startTime = useRef<number | null>(null);
+  const animFrame = useRef(0);
+
+  useEffect(() => {
+    if (target === 0) { setCount(0); return; }
+    startTime.current = null;
+    const step = (timestamp: number) => {
+      if (!startTime.current) startTime.current = timestamp;
+      const elapsed = timestamp - startTime.current;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.floor(eased * target));
+      if (progress < 1) { animFrame.current = requestAnimationFrame(step); }
+    };
+    animFrame.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animFrame.current);
+  }, [target, duration]);
+
+  return count;
+}
+
+// ─── Live Clock Component ───────────────────────────────────────
+const LiveClock: React.FC = () => {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  const dateStr = now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return (
+    <div className="text-right">
+      <div className="text-lg font-mono font-bold text-white/90 tabular-nums tracking-wide">{timeStr}</div>
+      <div className="text-xs text-slate-400">{dateStr}</div>
+    </div>
+  );
+};
+
+// ─── AYUSH System Icons ─────────────────────────────────────────
+const AYUSH_ICONS: Record<string, string> = {
+  Ayurveda: '🌿',
+  Homoeopathy: '💊',
+  Unani: '⚗️',
+  Siddha: '🔮',
+  'Yoga & Naturopathy': '🧘',
+};
+
+const AYUSH_GRADIENTS: Record<string, string> = {
+  Ayurveda: 'from-amber-500 to-orange-600',
+  Homoeopathy: 'from-blue-500 to-indigo-600',
+  Unani: 'from-emerald-500 to-green-700',
+  Siddha: 'from-purple-500 to-violet-700',
+  'Yoga & Naturopathy': 'from-teal-500 to-cyan-600',
+};
 
 export const DashboardPage: React.FC = () => {
   const { doctor } = useAuth();
@@ -32,12 +97,21 @@ export const DashboardPage: React.FC = () => {
     storageService.getPreIntakes()
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const todayStr = new Date().toISOString().split('T')[0];
   const casesTodayCount = cases.filter((c) => c.caseDate === todayStr).length;
   const draftCasesCount = cases.filter((c) => c.status === 'Draft').length;
   const waitingPatientsCount = preIntakes.filter((p) => p.status.includes('Waiting') || p.status.includes('Priority')).length;
   const emergencyCount = preIntakes.filter((p) => p.isRedFlagEmergency && p.status !== 'Completed').length;
+
+  // Animated counters
+  const animWaiting = useAnimatedCounter(waitingPatientsCount);
+  const animPatients = useAnimatedCounter(patients.length);
+  const animToday = useAnimatedCounter(casesTodayCount);
+  const animDrafts = useAnimatedCounter(draftCasesCount);
 
   const systemCounts: Record<AyushSystem, number> = {
     Ayurveda: cases.filter((c) => c.ayushSystem === 'Ayurveda').length,
@@ -57,7 +131,7 @@ export const DashboardPage: React.FC = () => {
     );
   });
 
-  const getSystemBadgeColor = (sys: AyushSystem) => {
+  const getSystemBadgeColor = useCallback((sys: AyushSystem) => {
     switch (sys) {
       case 'Ayurveda':
         return 'bg-amber-100 text-amber-900 border-amber-300';
@@ -72,7 +146,7 @@ export const DashboardPage: React.FC = () => {
       default:
         return 'bg-gray-100 text-gray-800 border-gray-300';
     }
-  };
+  }, []);
 
   const handleStartConsultation = (intake: PreConsultationIntake) => {
     storageService.updatePreIntakeStatus(intake.id, 'In Consultation');
@@ -84,64 +158,113 @@ export const DashboardPage: React.FC = () => {
     setPreIntakes(storageService.getPreIntakes());
   };
 
+  // Staggered animation delay helper
+  const stagger = (idx: number) => ({
+    opacity: mounted ? 1 : 0,
+    transform: mounted ? 'translateY(0)' : 'translateY(24px)',
+    transition: `all 0.6s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 80}ms`,
+  });
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good Morning';
+    if (h < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  })();
+
   return (
     <div className="space-y-6 pb-12">
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-teal-950 rounded-2xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+      {/* ═══════════════════════════════════════════════════════════
+          WELCOME BANNER — hero gradient with particles effect
+          ═══════════════════════════════════════════════════════════ */}
+      <div
+        className="relative bg-gradient-to-br from-blue-950 via-slate-900 to-teal-950 rounded-3xl p-6 sm:p-8 text-white shadow-2xl overflow-hidden"
+        style={stagger(0)}
+      >
+        {/* Animated background orbs */}
+        <div className="absolute -right-16 -top-16 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl animate-float-slow pointer-events-none" />
+        <div className="absolute -left-12 -bottom-20 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-float-reverse pointer-events-none" />
+        <div className="absolute right-1/3 top-1/4 w-32 h-32 bg-amber-400/8 rounded-full blur-2xl animate-float-medium pointer-events-none" />
+
+        {/* Subtle grid pattern */}
+        <div
+          className="absolute inset-0 opacity-5 pointer-events-none"
+          style={{
+            backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1px)`,
+            backgroundSize: '24px 24px',
+          }}
+        />
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-teal-300 text-xs font-semibold backdrop-blur-md">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+          <div className="space-y-3">
+            {/* Ministry badge */}
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-teal-200 text-xs font-semibold backdrop-blur-md border border-white/10 animate-shimmer">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin-slow" />
               <span>Ministry of Ayush • All India Institute of Ayurveda EMR</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Welcome back, {doctor?.name || 'Doctor'}
+
+            {/* Greeting */}
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+              <span className="text-slate-300 font-normal">{greeting}, </span>
+              <span className="bg-gradient-to-r from-white via-teal-100 to-amber-200 bg-clip-text text-transparent">
+                {doctor?.name || 'Doctor'}
+              </span>
             </h1>
-            <p className="text-sm text-slate-300 max-w-2xl">
+            <p className="text-sm text-slate-400 flex items-center gap-2">
+              <Shield className="w-3.5 h-3.5 text-teal-400" />
               {doctor?.role} • {doctor?.institution}
             </p>
           </div>
 
-          {/* Quick Action Group */}
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              to="/cases/new"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-teal-950/40 transition-all hover:scale-105 active:scale-95"
-            >
-              <PlusCircle className="w-4 h-4 text-amber-300" />
-              <span>Start Case Taking</span>
-            </Link>
-            <Link
-              to="/patient-checkin"
-              target="_blank"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-400/40 rounded-xl text-sm font-semibold backdrop-blur-md transition-all"
-            >
-              <HeartPulse className="w-4 h-4 text-emerald-300 animate-pulse" />
-              <span>Open Patient MediKiosk</span>
-            </Link>
-            <Link
-              to="/patients/new"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-sm font-semibold backdrop-blur-md transition-all hover:bg-white/25"
-            >
-              <Users className="w-4 h-4 text-teal-300" />
-              <span>Add Patient</span>
-            </Link>
+          <div className="flex flex-col items-end gap-4">
+            {/* Live Clock */}
+            <LiveClock />
+
+            {/* Quick Action Group */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Link
+                to="/cases/new"
+                className="group inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-500 hover:to-teal-400 text-white rounded-xl text-sm font-bold shadow-lg shadow-teal-950/40 transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-teal-500/30 active:scale-95"
+              >
+                <PlusCircle className="w-4 h-4 text-amber-300 group-hover:rotate-90 transition-transform duration-300" />
+                <span>Start Case Taking</span>
+              </Link>
+              <Link
+                to="/patient-checkin"
+                target="_blank"
+                className="group inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600/25 hover:bg-emerald-500/40 text-emerald-200 border border-emerald-400/30 hover:border-emerald-400/60 rounded-xl text-sm font-semibold backdrop-blur-md transition-all duration-300"
+              >
+                <HeartPulse className="w-4 h-4 text-emerald-300 animate-pulse group-hover:scale-125 transition-transform duration-300" />
+                <span>Open MediKiosk</span>
+              </Link>
+              <Link
+                to="/patients/new"
+                className="group inline-flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/15 text-white border border-white/15 hover:border-white/30 rounded-xl text-sm font-semibold backdrop-blur-md transition-all duration-300"
+              >
+                <Users className="w-4 h-4 text-teal-300 group-hover:scale-110 transition-transform duration-300" />
+                <span>Add Patient</span>
+              </Link>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Stats Cards Grid */}
+      {/* ═══════════════════════════════════════════════════════════
+          STATS CARDS — animated counters with hover lift
+          ═══════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Waiting Room & Emergency Triage Card */}
+        {/* Waiting Room / Emergency */}
         <div
-          className={`p-5 rounded-2xl border shadow-2xs hover:shadow-md transition-shadow relative overflow-hidden ${
+          className={`group p-5 rounded-2xl border shadow-sm hover:shadow-lg transition-all duration-500 hover:-translate-y-1 relative overflow-hidden cursor-default ${
             emergencyCount > 0
               ? 'bg-red-50 border-red-300'
-              : 'bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border-emerald-200'
+              : 'bg-gradient-to-br from-emerald-50 to-teal-50/50 border-emerald-200'
           }`}
+          style={stagger(1)}
         >
-          <div className="flex items-center justify-between">
+          {/* Hover glow effect */}
+          <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${emergencyCount > 0 ? 'bg-gradient-to-br from-red-100/40 to-transparent' : 'bg-gradient-to-br from-emerald-100/40 to-transparent'}`} />
+          <div className="relative z-10 flex items-center justify-between">
             <div>
               <p
                 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
@@ -149,22 +272,22 @@ export const DashboardPage: React.FC = () => {
                 }`}
               >
                 <span
-                  className={`w-2 h-2 rounded-full animate-ping ${
-                    emergencyCount > 0 ? 'bg-red-600' : 'bg-emerald-500'
+                  className={`w-2 h-2 rounded-full ${
+                    emergencyCount > 0 ? 'bg-red-600 animate-ping' : 'bg-emerald-500 animate-pulse'
                   }`}
                 />
                 Waiting in OPD
               </p>
               <h3
-                className={`text-2xl font-black mt-1 ${
+                className={`text-3xl font-black mt-1 tabular-nums transition-all duration-300 group-hover:scale-110 origin-left ${
                   emergencyCount > 0 ? 'text-red-950' : 'text-emerald-950'
                 }`}
               >
-                {waitingPatientsCount}
+                {animWaiting}
               </h3>
               {emergencyCount > 0 ? (
                 <p className="text-xs text-red-600 font-bold mt-1 flex items-center gap-1">
-                  <Flame className="w-3.5 h-3.5" />
+                  <Flame className="w-3.5 h-3.5 animate-pulse" />
                   <span>{emergencyCount} Red-Flag Emergency Triage</span>
                 </p>
               ) : (
@@ -172,7 +295,7 @@ export const DashboardPage: React.FC = () => {
               )}
             </div>
             <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center border ${
+              className={`w-12 h-12 rounded-xl flex items-center justify-center border transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${
                 emergencyCount > 0
                   ? 'bg-red-100 text-red-700 border-red-300'
                   : 'bg-emerald-100 text-emerald-800 border-emerald-300'
@@ -183,105 +306,153 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
+        {/* Total Patients */}
+        <div
+          className="group bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-500 hover:-translate-y-1 relative overflow-hidden cursor-default"
+          style={stagger(2)}
+        >
+          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-blue-50/60 to-transparent" />
+          <div className="relative z-10 flex items-center justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Total Patients
               </p>
-              <h3 className="text-2xl font-black text-slate-900 mt-1">{patients.length}</h3>
+              <h3 className="text-3xl font-black text-slate-900 mt-1 tabular-nums transition-all duration-300 group-hover:scale-110 origin-left">{animPatients}</h3>
               <p className="text-xs text-slate-500 mt-1">ABDM registered profiles</p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-100">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-100 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3">
               <Users className="w-6 h-6" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
+        {/* Cases Today */}
+        <div
+          className="group bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-500 hover:-translate-y-1 relative overflow-hidden cursor-default"
+          style={stagger(3)}
+        >
+          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-purple-50/60 to-transparent" />
+          <div className="relative z-10 flex items-center justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Cases Today
               </p>
-              <h3 className="text-2xl font-black text-slate-900 mt-1">{casesTodayCount}</h3>
-              <p className="text-xs text-slate-500 mt-1">Recorded on {todayStr}</p>
+              <h3 className="text-3xl font-black text-slate-900 mt-1 tabular-nums transition-all duration-300 group-hover:scale-110 origin-left">{animToday}</h3>
+              <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                <Activity className="w-3 h-3 text-purple-500" />
+                Recorded on {todayStr}
+              </p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center border border-purple-100">
+            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center border border-purple-100 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3">
               <Calendar className="w-6 h-6" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
+        {/* Draft Cases */}
+        <div
+          className="group bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-500 hover:-translate-y-1 relative overflow-hidden cursor-default"
+          style={stagger(4)}
+        >
+          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-amber-50/60 to-transparent" />
+          <div className="relative z-10 flex items-center justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Draft Cases
               </p>
-              <h3 className="text-2xl font-black text-amber-600 mt-1">{draftCasesCount}</h3>
+              <h3 className="text-3xl font-black text-amber-600 mt-1 tabular-nums transition-all duration-300 group-hover:scale-110 origin-left">{animDrafts}</h3>
               <p className="text-xs text-slate-500 mt-1">Pending doctor sign-off</p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-100">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-100 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3">
               <FileEdit className="w-6 h-6" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ============================================================ */}
-      {/* OPD WAITING ROOM / MEDIKIOSK QUEUE (MODULE A, B, C, D) */}
-      {/* ============================================================ */}
-      <div className="bg-white rounded-2xl border border-teal-200/80 shadow-sm overflow-hidden">
+      {/* ═══════════════════════════════════════════════════════════
+          OPD WAITING ROOM QUEUE
+          ═══════════════════════════════════════════════════════════ */}
+      <div
+        className="bg-white rounded-2xl border border-teal-200/80 shadow-sm overflow-hidden"
+        style={stagger(5)}
+      >
         <div className="p-5 bg-gradient-to-r from-teal-900 via-blue-950 to-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/30 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/30 flex items-center justify-center">
               <HeartPulse className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold">OPD Waiting Room: MediKiosk Pre-Consultation Queue</h2>
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-teal-300 text-slate-950">
+                <h2 className="text-base font-bold">OPD Waiting Room: MediKiosk Queue</h2>
+                <span className="px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-teal-300 text-slate-950 animate-pulse">
                   {waitingPatientsCount} Queued
                 </span>
+                {emergencyCount > 0 && (
+                  <span className="px-2.5 py-0.5 text-[10px] font-black rounded-full bg-red-500 text-white flex items-center gap-1 animate-bounce">
+                    <Zap className="w-2.5 h-2.5" />
+                    {emergencyCount} Emergency
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-300">
-                Automated clinical history intake, SOCRATES probing, OCR document intelligence, and Red-Flag triage
+              <p className="text-xs text-slate-400">
+                Automated clinical history intake, SOCRATES probing, OCR intelligence & Red-Flag triage
               </p>
             </div>
           </div>
 
-          <Link
-            to="/patient-checkin"
-            target="_blank"
-            className="text-xs font-semibold text-emerald-200 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 self-start sm:self-auto"
-          >
-            <PlusCircle className="w-3.5 h-3.5 text-amber-300" />
-            <span>Open MediKiosk</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPreIntakes(storageService.getPreIntakes())}
+              className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg border border-white/10 transition-all hover:rotate-180 duration-500"
+              title="Refresh queue"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+            <Link
+              to="/patient-checkin"
+              target="_blank"
+              className="text-xs font-semibold text-emerald-200 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-2 rounded-lg transition-all duration-300 flex items-center gap-1.5"
+            >
+              <PlusCircle className="w-3.5 h-3.5 text-amber-300" />
+              <span>Open MediKiosk</span>
+            </Link>
+          </div>
         </div>
 
         {preIntakes.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-xs">
-            No patients currently waiting in pre-check-in queue.
+          <div className="p-12 text-center">
+            <div className="w-16 h-16 rounded-full bg-teal-50 text-teal-400 flex items-center justify-center mx-auto mb-4 animate-bounce-slow">
+              <Bell className="w-7 h-7" />
+            </div>
+            <p className="text-sm font-semibold text-slate-600">No patients in queue</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Open the <strong>MediKiosk</strong> on a patient kiosk to begin pre-consultation intake
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {preIntakes.map((intake) => (
+            {preIntakes.map((intake, idx) => (
               <div
                 key={intake.id}
-                className={`p-4 sm:p-5 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                className={`group/row p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300 ${
                   intake.isRedFlagEmergency
                     ? 'bg-red-50/70 border-l-4 border-l-red-600 hover:bg-red-100/60'
                     : 'hover:bg-slate-50/80'
                 }`}
+                style={{
+                  opacity: mounted ? 1 : 0,
+                  transform: mounted ? 'translateX(0)' : 'translateX(-20px)',
+                  transition: `all 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${600 + idx * 100}ms`,
+                }}
               >
                 <div className="flex items-start gap-3.5">
                   {/* Token badge */}
                   <div
-                    className={`px-3 py-2 rounded-xl text-white font-mono font-black text-sm text-center shadow-xs shrink-0 ${
+                    className={`px-3 py-2 rounded-xl text-white font-mono font-black text-sm text-center shadow-xs shrink-0 transition-transform duration-300 group-hover/row:scale-110 ${
                       intake.isRedFlagEmergency
-                        ? 'bg-red-600 border border-red-400'
+                        ? 'bg-red-600 border border-red-400 animate-pulse'
                         : 'bg-gradient-to-br from-teal-700 to-blue-900'
                     }`}
                   >
@@ -302,14 +473,13 @@ export const DashboardPage: React.FC = () => {
                           intake.preferredAyushSystem
                         )}`}
                       >
-                        {intake.preferredAyushSystem}
+                        {AYUSH_ICONS[intake.preferredAyushSystem] || ''} {intake.preferredAyushSystem}
                       </span>
 
-                      {/* Red flag priority alert badge */}
                       {intake.isRedFlagEmergency && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-black text-red-900 bg-red-100 border border-red-400 px-2 py-0.5 rounded-full animate-pulse">
                           <Flame className="w-3 h-3 text-red-600" />
-                          🚨 RED-FLAG PRIORITY TRIAGE
+                          🚨 RED-FLAG PRIORITY
                         </span>
                       )}
 
@@ -321,11 +491,11 @@ export const DashboardPage: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Patient Reported Narrative & SOCRATES HPI */}
-                    <div className="text-xs text-slate-700 leading-relaxed bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs space-y-1">
+                    {/* SOCRATES HPI */}
+                    <div className="text-xs text-slate-700 leading-relaxed bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs space-y-1 transition-all duration-300 group-hover/row:border-teal-200">
                       <p>
                         <strong className="text-slate-900 font-bold">Chief Complaint: </strong>
-                        "{intake.chiefComplaints}"
+                        &ldquo;{intake.chiefComplaints}&rdquo;
                         {intake.duration && (
                           <span className="text-slate-500 font-normal"> (Duration: {intake.duration})</span>
                         )}
@@ -340,7 +510,7 @@ export const DashboardPage: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Metadata strip: Scanned Documents, Allergies, Time */}
+                    {/* Metadata */}
                     <div className="flex items-center gap-3 text-[11px] text-slate-400 flex-wrap">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -348,9 +518,9 @@ export const DashboardPage: React.FC = () => {
                       </span>
                       <span>Phone: {intake.phone}</span>
                       {intake.digitizedDocuments && intake.digitizedDocuments.length > 0 && (
-                        <span className="text-emerald-700 font-semibold flex items-center gap-1 bg-emerald-50 px-2 py-0.2 rounded border border-emerald-200">
+                        <span className="text-emerald-700 font-semibold flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           <FileCheck className="w-3 h-3" />
-                          {intake.digitizedDocuments.length} Scanned Docs (OCR Extracted)
+                          {intake.digitizedDocuments.length} Scanned Docs
                         </span>
                       )}
                       {intake.allergies && intake.allergies !== 'None' && (
@@ -362,27 +532,27 @@ export const DashboardPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Take case button */}
+                {/* Buttons */}
                 <div className="flex items-center gap-2 self-end md:self-center shrink-0">
                   <button
                     type="button"
                     onClick={() => handleStartConsultation(intake)}
-                    className={`inline-flex items-center gap-2 px-4 py-2 text-white rounded-xl text-xs font-bold shadow-md transition-all hover:scale-105 active:scale-95 ${
+                    className={`group/btn inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-xs font-bold shadow-md transition-all duration-300 hover:scale-105 hover:shadow-lg active:scale-95 ${
                       intake.isRedFlagEmergency
                         ? 'bg-red-600 hover:bg-red-700 shadow-red-950/30'
-                        : 'bg-teal-700 hover:bg-teal-800 shadow-teal-950/20'
+                        : 'bg-gradient-to-r from-teal-700 to-teal-600 hover:from-teal-600 hover:to-teal-500 shadow-teal-950/20'
                     }`}
                   >
                     <Stethoscope className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Take Case (Load Summary)</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>Take Case</span>
+                    <ArrowRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover/btn:translate-x-1" />
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleDeletePreIntake(intake.id)}
                     title="Dismiss patient from queue"
-                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-lg transition-colors"
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-lg transition-all duration-300 hover:scale-110 hover:rotate-12"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -393,36 +563,64 @@ export const DashboardPage: React.FC = () => {
         )}
       </div>
 
-      {/* AYUSH Discipline Breakdown Badges */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Cases by AYUSH Discipline
-          </h3>
-          <span className="text-xs text-slate-400">Integrated AYUSH coverage</span>
+      {/* ═══════════════════════════════════════════════════════════
+          AYUSH DISCIPLINE CARDS — visual with gradients & icons
+          ═══════════════════════════════════════════════════════════ */}
+      <div
+        className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"
+        style={stagger(6)}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-teal-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+              Cases by AYUSH Discipline
+            </h3>
+          </div>
+          <span className="text-xs text-slate-400 flex items-center gap-1">
+            <Activity className="w-3 h-3" />
+            Integrated coverage
+          </span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {(Object.keys(systemCounts) as AyushSystem[]).map((sys) => (
+          {(Object.keys(systemCounts) as AyushSystem[]).map((sys, idx) => (
             <div
               key={sys}
-              className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between"
+              className="group relative p-4 rounded-xl border border-slate-200/80 hover:border-transparent hover:shadow-lg transition-all duration-500 hover:-translate-y-1 cursor-default overflow-hidden"
+              style={stagger(7 + idx)}
             >
-              <div className="text-xs font-bold text-slate-800">{sys}</div>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className="text-xl font-extrabold text-teal-800">{systemCounts[sys]}</span>
-                <span className="text-[10px] text-slate-500 font-medium">cases</span>
+              {/* Gradient overlay on hover */}
+              <div className={`absolute inset-0 bg-gradient-to-br ${AYUSH_GRADIENTS[sys]} opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-xl`} />
+
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12">{AYUSH_ICONS[sys]}</span>
+                  <span className="text-xs font-bold text-slate-700 group-hover:text-slate-900 transition-colors duration-300">{sys}</span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-black text-teal-800 tabular-nums transition-all duration-300 group-hover:scale-110 origin-left">{systemCounts[sys]}</span>
+                  <span className="text-[10px] text-slate-400 font-medium">cases</span>
+                </div>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Recent Cases Section */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      {/* ═══════════════════════════════════════════════════════════
+          RECENT CASES TABLE
+          ═══════════════════════════════════════════════════════════ */}
+      <div
+        className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+        style={stagger(12)}
+      >
         <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-slate-900">Recent Patient Case Records</h2>
-            <p className="text-xs text-slate-500">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-teal-600" />
+              Recent Patient Case Records
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
               Live case history recorded in the AYUSH CaseFlow repository
             </p>
           </div>
@@ -435,12 +633,12 @@ export const DashboardPage: React.FC = () => {
                 placeholder="Search patient, complaint..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-600 focus:border-teal-600"
+                className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 transition-all duration-300"
               />
             </div>
             <Link
               to="/cases"
-              className="text-xs font-semibold text-teal-700 hover:text-teal-900 px-3 py-1.5 rounded-lg border border-teal-200 bg-teal-50 hover:bg-teal-100 transition-colors shrink-0 flex items-center gap-1"
+              className="text-xs font-semibold text-teal-700 hover:text-teal-900 px-3 py-2 rounded-xl border border-teal-200 bg-teal-50 hover:bg-teal-100 transition-all duration-300 shrink-0 flex items-center gap-1"
             >
               <span>View All</span>
               <ChevronRight className="w-3.5 h-3.5" />
@@ -451,7 +649,7 @@ export const DashboardPage: React.FC = () => {
         {/* Table / List */}
         {filteredCases.length === 0 ? (
           <div className="p-12 text-center">
-            <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+            <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3 animate-bounce-slow">
               <FolderOpen className="w-6 h-6" />
             </div>
             <p className="text-sm font-semibold text-slate-700">No cases match your search</p>
@@ -473,8 +671,16 @@ export const DashboardPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredCases.slice(0, 5).map((caseItem) => (
-                  <tr key={caseItem.id} className="hover:bg-slate-50/80 transition-colors">
+                {filteredCases.slice(0, 5).map((caseItem, idx) => (
+                  <tr
+                    key={caseItem.id}
+                    className="hover:bg-teal-50/40 transition-all duration-300"
+                    style={{
+                      opacity: mounted ? 1 : 0,
+                      transform: mounted ? 'translateX(0)' : 'translateX(-12px)',
+                      transition: `all 0.4s ease ${1000 + idx * 80}ms`,
+                    }}
+                  >
                     <td className="py-3 px-4 whitespace-nowrap">
                       <div className="font-mono font-bold text-slate-800">{caseItem.id}</div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -488,11 +694,11 @@ export const DashboardPage: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap">
                       <span
-                        className={`inline-block px-2 py-0.5 text-[11px] font-semibold rounded-md border ${getSystemBadgeColor(
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded-md border ${getSystemBadgeColor(
                           caseItem.ayushSystem
                         )}`}
                       >
-                        {caseItem.ayushSystem}
+                        {AYUSH_ICONS[caseItem.ayushSystem] || ''} {caseItem.ayushSystem}
                       </span>
                     </td>
                     <td className="py-3 px-4 max-w-xs truncate text-slate-600">
@@ -506,7 +712,7 @@ export const DashboardPage: React.FC = () => {
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
                           Draft
                         </span>
                       )}
@@ -515,15 +721,16 @@ export const DashboardPage: React.FC = () => {
                       <div className="flex items-center justify-end gap-1.5">
                         <Link
                           to={`/cases/${caseItem.id}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md transition-colors"
+                          className="group/btn inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-all duration-300 hover:shadow-sm"
                         >
                           <Eye className="w-3 h-3" />
                           <span>View</span>
+                          <ArrowRight className="w-2.5 h-2.5 opacity-0 -ml-1 group-hover/btn:opacity-100 group-hover/btn:ml-0 transition-all duration-300" />
                         </Link>
                         {caseItem.status === 'Draft' && (
                           <Link
                             to={`/cases/edit/${caseItem.id}`}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-all duration-300 hover:shadow-sm"
                           >
                             <FileEdit className="w-3 h-3" />
                             <span>Edit</span>
@@ -532,7 +739,7 @@ export const DashboardPage: React.FC = () => {
                         <Link
                           to={`/cases/${caseItem.id}?print=true`}
                           title="Print Case Sheet"
-                          className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors"
+                          className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 transition-all duration-300 hover:shadow-sm"
                         >
                           <Printer className="w-3.5 h-3.5" />
                         </Link>
